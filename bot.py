@@ -86,7 +86,7 @@ async def main() -> None:
     database.init_schema()
 
     bot = Bot(token=settings.bot_token)
-    await setup_bot(bot)
+    await setup_bot(bot, settings)
 
     dp = Dispatcher()
     dp["db"] = database

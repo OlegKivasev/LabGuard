@@ -1,21 +1,40 @@
 import asyncio
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
 import uvicorn
 
 from config import Settings
 from database import Database
-from miniapp_auth import verify_admin_token
+from miniapp_auth import verify_admin_token, verify_telegram_init_data
 from marzban import MarzbanClient
 
 
-def _verify_admin(settings: Settings, token: str) -> int:
-    admin_id = verify_admin_token(settings.bot_token, token)
-    if admin_id is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+def _is_admin_allowed(settings: Settings, admin_id: int, username: str = "") -> bool:
+    if settings.admin_telegram_ids and admin_id in settings.admin_telegram_ids:
+        return True
+    if settings.admin_telegram_usernames and username in settings.admin_telegram_usernames:
+        return True
+    if not settings.admin_telegram_ids and not settings.admin_telegram_usernames:
+        return True
+    return False
 
-    if settings.admin_telegram_ids and admin_id not in settings.admin_telegram_ids:
+
+def _verify_admin(settings: Settings, token: str, init_data: str) -> int:
+    admin_id: int | None = None
+    admin_username = ""
+    if token:
+        admin_id = verify_admin_token(settings.bot_token, token)
+
+    if admin_id is None and init_data:
+        payload = verify_telegram_init_data(settings.bot_token, init_data)
+        if payload is not None:
+            admin_id, admin_username = payload
+
+    if admin_id is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired auth")
+
+    if not _is_admin_allowed(settings, admin_id, admin_username):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     return admin_id
@@ -34,13 +53,20 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
     app = FastAPI(title="VPN Admin Mini App", docs_url=None, redoc_url=None)
 
     @app.get("/admin-app", response_class=HTMLResponse)
-    async def admin_app_page(token: str = Query("")) -> HTMLResponse:
-        _verify_admin(settings, token)
+    async def admin_app_page(
+        token: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> HTMLResponse:
+        _ = token
+        _ = x_tg_init_data
         return HTMLResponse(_ADMIN_APP_HTML)
 
     @app.get("/admin-app/api/overview")
-    async def admin_overview(token: str = Query("")) -> dict:
-        _verify_admin(settings, token)
+    async def admin_overview(
+        token: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        _verify_admin(settings, token, x_tg_init_data)
         return db.get_admin_overview()
 
     @app.get("/admin-app/api/users")
@@ -48,14 +74,19 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         token: str = Query(""),
         limit: int = Query(30, ge=1, le=100),
         q: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
     ) -> dict:
-        _verify_admin(settings, token)
+        _verify_admin(settings, token, x_tg_init_data)
         users = db.search_users(query=q, limit=limit)
         return {"users": users}
 
     @app.post("/admin-app/api/user/{telegram_id}/deactivate")
-    async def admin_deactivate(telegram_id: int, token: str = Query("")) -> dict:
-        _verify_admin(settings, token)
+    async def admin_deactivate(
+        telegram_id: int,
+        token: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        _verify_admin(settings, token, x_tg_init_data)
 
         user = db.get_user_by_telegram_id(telegram_id)
         if user is None:
@@ -72,8 +103,12 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         return {"ok": True, "marzban_changed": marzban_changed}
 
     @app.delete("/admin-app/api/user/{telegram_id}")
-    async def admin_delete(telegram_id: int, token: str = Query("")) -> dict:
-        _verify_admin(settings, token)
+    async def admin_delete(
+        telegram_id: int,
+        token: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        _verify_admin(settings, token, x_tg_init_data)
 
         user = db.get_user_by_telegram_id(telegram_id)
         if user is None:
@@ -161,28 +196,38 @@ _ADMIN_APP_HTML = """<!doctype html>
   <script>
     const params = new URLSearchParams(window.location.search)
     const token = params.get('token') || ''
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null
+    const initData = tg ? (tg.initData || '') : ''
+    if (tg) {
+      tg.ready()
+      tg.expand()
+    }
+
+    function authHeaders() {
+      return initData ? { 'X-TG-Init-Data': initData } : {}
+    }
 
     async function loadOverview() {
-      const res = await fetch(`/admin-app/api/overview?token=${encodeURIComponent(token)}`)
+      const res = await fetch(`/admin-app/api/overview?token=${encodeURIComponent(token)}`, { headers: authHeaders() })
       if (!res.ok) throw new Error('overview failed')
       return res.json()
     }
 
     async function loadUsers(search) {
       const q = search ? `&q=${encodeURIComponent(search)}` : ''
-      const res = await fetch(`/admin-app/api/users?limit=50&token=${encodeURIComponent(token)}${q}`)
+      const res = await fetch(`/admin-app/api/users?limit=50&token=${encodeURIComponent(token)}${q}`, { headers: authHeaders() })
       if (!res.ok) throw new Error('users failed')
       return res.json()
     }
 
     async function deactivateUser(telegramId) {
-      const res = await fetch(`/admin-app/api/user/${telegramId}/deactivate?token=${encodeURIComponent(token)}`, { method: 'POST' })
+      const res = await fetch(`/admin-app/api/user/${telegramId}/deactivate?token=${encodeURIComponent(token)}`, { method: 'POST', headers: authHeaders() })
       if (!res.ok) throw new Error('deactivate failed')
       return res.json()
     }
 
     async function deleteUser(telegramId) {
-      const res = await fetch(`/admin-app/api/user/${telegramId}?token=${encodeURIComponent(token)}`, { method: 'DELETE' })
+      const res = await fetch(`/admin-app/api/user/${telegramId}?token=${encodeURIComponent(token)}`, { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error('delete failed')
       return res.json()
     }
