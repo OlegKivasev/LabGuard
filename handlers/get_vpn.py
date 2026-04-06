@@ -66,21 +66,22 @@ async def cmd_get(
     db.log_event(message.from_user.id, "get")
 
     links = marzban_user.get("links") or []
-    subscription_url = str(marzban_user.get("subscription_url", "")).strip()
-    config_text = str(links[0]).strip() if links else ""
+    config_text = ""
+    for link in links:
+        link_text = str(link).strip()
+        if link_text.lower().startswith("vless://"):
+            config_text = link_text
+            break
 
     if not config_text:
         await message.answer(
-            "Триал активирован, но ссылка конфига пока недоступна. Напиши /support"
+            "Триал активирован, но VLESS-ссылка недоступна. Проверь VLESS inbound в Marzban и попробуй снова."
         )
         return
-
-    protocol = config_text.split("://", 1)[0].upper() if "://" in config_text else "VPN"
 
     await message.answer(
         "Триал активирован.\n"
         f"Срок действия: до {expires_at} UTC\n\n"
-        f"🔗 Твой {protocol} конфиг:\n"
-        f"{config_text}\n\n"
-        f"📦 Подписка: {subscription_url if subscription_url else 'недоступно'}"
+        "🔗 Твоя VLESS ссылка:\n"
+        f"{config_text}"
     )

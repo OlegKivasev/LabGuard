@@ -129,25 +129,19 @@ class MarzbanClient:
         expire_ts = int(expire_utc.timestamp())
 
         inbounds_payload = await self.get_inbounds()
-        protocol_priority = ("vless", "vmess", "trojan", "shadowsocks")
-        selected_protocol = ""
-        selected_tags: list[str] = []
+        vless_tags = [
+            str(item.get("tag", "")).strip()
+            for item in inbounds_payload.get("vless", [])
+        ]
+        vless_tags = [tag for tag in vless_tags if tag]
 
-        for protocol in protocol_priority:
-            tags = [str(item.get("tag", "")).strip() for item in inbounds_payload.get(protocol, [])]
-            tags = [tag for tag in tags if tag]
-            if tags:
-                selected_protocol = protocol
-                selected_tags = tags
-                break
-
-        if not selected_protocol:
-            raise RuntimeError("No enabled inbounds found in Marzban")
+        if not vless_tags:
+            raise RuntimeError("No enabled VLESS inbounds found in Marzban")
 
         payload = {
             "username": username,
-            "proxies": {selected_protocol: {}},
-            "inbounds": {selected_protocol: selected_tags},
+            "proxies": {"vless": {}},
+            "inbounds": {"vless": vless_tags},
             "expire": expire_ts,
             "data_limit": 0,
             "data_limit_reset_strategy": "no_reset",
@@ -155,6 +149,22 @@ class MarzbanClient:
         }
         response = await self._request_with_fallback("POST", "/api/user", json=payload)
         if response.status_code == 409:
+            update_payload = {
+                "proxies": {"vless": {}},
+                "inbounds": {"vless": vless_tags},
+                "expire": expire_ts,
+                "data_limit": 0,
+                "data_limit_reset_strategy": "no_reset",
+            }
+            update_response = await self._request_with_fallback(
+                "PUT",
+                f"/api/user/{username}",
+                json=update_payload,
+            )
+            if update_response.status_code >= 400:
+                raise RuntimeError(
+                    f"Marzban update user failed: {update_response.status_code} {update_response.text}"
+                )
             existing = await self.get_user(username)
             if existing is None:
                 raise RuntimeError("Marzban returned 409 but user was not found")
