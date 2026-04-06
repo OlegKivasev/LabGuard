@@ -64,23 +64,43 @@ class MarzbanClient:
         token = await self._get_bearer_token()
         return {"Authorization": f"Bearer {token}"}
 
+    async def _request_with_fallback(self, method: str, path: str) -> httpx.Response:
+        if not self.is_configured:
+            raise RuntimeError("Marzban client is not configured")
+
+        url = f"{self.base_url}{path}"
+
+        async with httpx.AsyncClient(timeout=15.0, verify=self.verify_tls) as client:
+            if self.api_key:
+                response = await client.request(
+                    method,
+                    url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+                if response.status_code != 401:
+                    return response
+
+            if self.username and self.password:
+                token = await self._fetch_admin_token()
+                response = await client.request(
+                    method,
+                    url,
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                return response
+
+            return response
+
     async def healthcheck(self) -> bool:
         if not self.is_configured:
             return False
 
-        headers = await self._auth_headers()
-        async with httpx.AsyncClient(timeout=15.0, verify=self.verify_tls) as client:
-            response = await client.get(f"{self.base_url}/api/admin", headers=headers)
-            return response.status_code < 400
+        response = await self._request_with_fallback("GET", "/api/admin")
+        return response.status_code < 400
 
     async def get_user(self, username: str) -> dict[str, Any] | None:
-        headers = await self._auth_headers()
-        async with httpx.AsyncClient(timeout=15.0, verify=self.verify_tls) as client:
-            response = await client.get(
-                f"{self.base_url}/api/user/{username}",
-                headers=headers,
-            )
-            if response.status_code == 404:
-                return None
-            response.raise_for_status()
-            return response.json()
+        response = await self._request_with_fallback("GET", f"/api/user/{username}")
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
