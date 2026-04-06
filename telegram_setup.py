@@ -5,12 +5,9 @@ from config import Settings
 
 
 BOT_COMMANDS = [
-    BotCommand(command="start", description="Запуск бота"),
-    BotCommand(command="get", description="Получить VPN (локальный триал)"),
-    BotCommand(command="status", description="Проверить статус"),
-    BotCommand(command="help", description="Инструкция"),
-    BotCommand(command="apps", description="Приложения"),
-    BotCommand(command="support", description="Поддержка"),
+    BotCommand(command="start", description="Открыть бота и меню"),
+    BotCommand(command="menu", description="Показать главное меню"),
+    BotCommand(command="support", description="Написать в поддержку"),
 ]
 
 

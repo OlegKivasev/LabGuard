@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from database import Database
+from .keyboards import main_menu_keyboard
 
 router = Router(name="help")
 
@@ -15,10 +16,11 @@ async def cmd_help(message: Message, db: Database) -> None:
 
     await message.answer(
         "Как подключиться:\n"
-        "1) Нажми /get\n"
-        "2) Получи конфиг (после шага интеграции API)\n"
-        "3) Установи клиент: /apps\n"
-        "4) Импортируй конфиг и подключись"
+        "1) Нажми кнопку «Получить VPN»\n"
+        "2) Подтверди выдачу подписки\n"
+        "3) Открой «Приложения» и установи клиент\n"
+        "4) Импортируй ссылку подписки и подключись",
+        reply_markup=main_menu_keyboard(),
     )
 
 
@@ -33,5 +35,6 @@ async def cmd_apps(message: Message, db: Database) -> None:
         "- iOS: Hiddify / Streisand\n"
         "- Android: Hiddify / v2rayNG\n"
         "- Windows: Hiddify / Nekoray\n"
-        "- macOS: Hiddify"
+        "- macOS: Hiddify",
+        reply_markup=main_menu_keyboard(),
     )

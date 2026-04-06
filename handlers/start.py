@@ -4,6 +4,7 @@ from aiogram.types import Message
 
 from config import Settings
 from database import Database
+from .keyboards import main_menu_keyboard
 
 router = Router(name="start")
 
@@ -24,12 +25,17 @@ async def cmd_start(message: Message, db: Database, settings: Settings) -> None:
 
     db.log_event(message.from_user.id, "start")
 
-    await message.answer(
-        "Привет! Я выдаю бесплатный VPN на 14 дней.\n"
-        "Команды:\n"
-        "/get - получить VPN\n"
-        "/status - мой статус\n"
-        "/help - инструкция",
-    )
+    if existing is None:
+        await message.answer(
+            "Привет! Мы не берем деньги за этот доступ и не собираем логи твоего интернет-трафика.\n"
+            "Сейчас это бесплатный инструмент, чтобы понять, насколько VPN востребован и перегружен в реальных условиях.\n\n"
+            "Ниже главное меню, начни с кнопки «Получить VPN».",
+            reply_markup=main_menu_keyboard(),
+        )
+    else:
+        await message.answer(
+            "С возвращением! Отправляю главное меню.",
+            reply_markup=main_menu_keyboard(),
+        )
 
     _ = settings

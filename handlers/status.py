@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from database import Database
+from .keyboards import main_menu_keyboard
 
 router = Router(name="status")
 
@@ -20,7 +21,10 @@ async def cmd_status(message: Message, db: Database) -> None:
 
     user = db.get_user_by_telegram_id(message.from_user.id)
     if user is None:
-        await message.answer("Тебя еще нет в системе. Нажми /start и затем /get")
+        await message.answer(
+            "Тебя еще нет в системе. Нажми кнопку «Получить VPN» в меню.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
 
     db.touch_last_active(message.from_user.id)
@@ -28,7 +32,10 @@ async def cmd_status(message: Message, db: Database) -> None:
 
     expires_raw = user.get("expires_at")
     if not expires_raw:
-        await message.answer("VPN не активирован или пробный период завершен.")
+        await message.answer(
+            "Подписка не активирована или пробный период завершен.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
 
     expires_at = _parse_sqlite_dt(str(expires_raw))
@@ -41,5 +48,6 @@ async def cmd_status(message: Message, db: Database) -> None:
         "📊 Твой статус:\n"
         f"{status_mark}\n"
         f"📅 Осталось: {remaining_days} дней\n"
-        f"⏳ До: {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+        f"⏳ До: {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
+        reply_markup=main_menu_keyboard(),
     )
