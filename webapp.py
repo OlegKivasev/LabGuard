@@ -248,12 +248,26 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         is_active = False
         expires_at = ""
         remaining_days = 0
+        subscription_url = ""
+        is_subscription = False
         if expires_raw:
             dt = _parse_sqlite_dt(str(expires_raw))
             now = datetime.now(timezone.utc)
             is_active = dt > now
             remaining_days = max(0, (dt - now).days)
             expires_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        if user:
+            for candidate in _candidate_marzban_usernames(user, telegram_id):
+                try:
+                    marzban_user = await marzban.get_user(candidate)
+                except Exception:
+                    marzban_user = None
+                if marzban_user:
+                    subscription_url, is_subscription = _extract_subscription_text(marzban_user)
+                    if is_subscription:
+                        subscription_url = _normalize_subscription_url(subscription_url, marzban.base_url)
+                    break
 
         return {
             "ok": True,
@@ -263,6 +277,8 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
             "trial_used": db.has_received_trial(telegram_id),
             "support_username": settings.support_bot_username,
             "is_admin": _is_admin_allowed(settings, telegram_id, username),
+            "subscription_url": subscription_url,
+            "is_subscription": is_subscription,
         }
 
     @app.post("/app/api/get-vpn")
@@ -726,7 +742,7 @@ _USER_APP_HTML = """<!doctype html>
       <div id="statusError" class="alert"></div>
       <div class="row" style="margin-top: 10px;">
         <button id="getVpnBtn">Получить VPN</button>
-        <button id="refreshBtn" class="secondary">Обновить статус</button>
+        <button id="refreshBtn" class="secondary" style="display:none">Обновить статус</button>
       </div>
       <div id="subLink" class="sub-link" style="display:none"></div>
       <div class="row" style="margin-top: 8px;">
@@ -756,10 +772,17 @@ _USER_APP_HTML = """<!doctype html>
     }
 
     let latestSubscriptionUrl = ''
+    let primaryMode = 'get'
 
     function renderStatus(data) {
       const statusText = document.getElementById('statusText')
       const statusMeta = document.getElementById('statusMeta')
+      const getBtn = document.getElementById('getVpnBtn')
+      const refreshBtn = document.getElementById('refreshBtn')
+
+      if (data.subscription_url) showSubscription(data.subscription_url)
+      else showSubscription('')
+
       if (data.is_active) {
         statusText.textContent = 'Активен'
         statusText.classList.add('ok')
@@ -773,6 +796,24 @@ _USER_APP_HTML = """<!doctype html>
         statusText.classList.remove('ok')
         statusMeta.textContent = 'Нажми «Получить VPN», чтобы активировать подписку.'
       }
+
+      if (data.trial_used) {
+        refreshBtn.style.display = 'inline-block'
+        if (latestSubscriptionUrl) {
+          primaryMode = 'open'
+          getBtn.style.display = 'inline-block'
+          getBtn.textContent = 'Открыть ссылку'
+        } else {
+          primaryMode = 'none'
+          getBtn.style.display = 'none'
+        }
+      } else {
+        primaryMode = 'get'
+        getBtn.style.display = 'inline-block'
+        getBtn.textContent = 'Получить VPN'
+        refreshBtn.style.display = 'none'
+      }
+
       if (data.support_username) {
         document.getElementById('supportInfo').textContent = `Можно также написать: @${data.support_username}`
       }
@@ -850,7 +891,15 @@ _USER_APP_HTML = """<!doctype html>
     }
 
     document.getElementById('refreshBtn').addEventListener('click', loadStatus)
-    document.getElementById('getVpnBtn').addEventListener('click', getVpn)
+    document.getElementById('getVpnBtn').addEventListener('click', () => {
+      if (primaryMode === 'open' && latestSubscriptionUrl) {
+        window.location.href = latestSubscriptionUrl
+        return
+      }
+      if (primaryMode === 'get') {
+        getVpn()
+      }
+    })
     document.getElementById('supportBtn').addEventListener('click', sendSupport)
     document.getElementById('adminSwitchBtn').addEventListener('click', () => {
       if (!initData) return
