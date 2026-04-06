@@ -23,6 +23,15 @@ def _is_admin(message: Message, settings: Settings) -> bool:
     return by_id or by_username
 
 
+def _candidate_marzban_usernames(user: dict, telegram_id: int) -> list[str]:
+    candidates: list[str] = []
+    for value in (user.get("marzban_id"), user.get("username"), f"tg_{telegram_id}"):
+        name = str(value or "").strip()
+        if name and name not in candidates:
+            candidates.append(name)
+    return candidates
+
+
 @router.message(Command("admin_users"))
 async def cmd_admin_users(message: Message, command: CommandObject, db: Database, settings: Settings) -> None:
     if not _is_admin(message, settings):
@@ -72,17 +81,26 @@ async def cmd_admin_deactivate(
         return
 
     marzban_id = str(user.get("marzban_id") or "").strip()
-    if marzban_id:
+    disabled = False
+    for candidate in _candidate_marzban_usernames(user, telegram_id):
         try:
-            await marzban.disable_user(marzban_id)
+            if await marzban.disable_user(candidate):
+                disabled = True
+                break
         except Exception as exc:
-            logger.exception("Failed to disable Marzban user %s: %s", marzban_id, exc)
+            logger.exception("Failed to disable Marzban user %s: %s", candidate, exc)
             await message.answer("Не удалось деактивировать пользователя в Marzban.")
             return
 
     db.clear_trial(telegram_id)
     db.log_event(telegram_id, "admin_deactivate")
-    await message.answer(f"Триал деактивирован для telegram_id={telegram_id}.")
+    if disabled:
+        await message.answer(f"Триал деактивирован для telegram_id={telegram_id}.")
+    else:
+        await message.answer(
+            f"Локальный триал сброшен для telegram_id={telegram_id}, "
+            "но пользователь в Marzban не найден."
+        )
 
 
 @router.message(Command("admin_delete"))
@@ -108,16 +126,24 @@ async def cmd_admin_delete(
         await message.answer("Пользователь не найден в локальной базе.")
         return
 
-    marzban_id = str(user.get("marzban_id") or "").strip()
-    if marzban_id:
+    deleted_in_marzban = False
+    for candidate in _candidate_marzban_usernames(user, telegram_id):
         try:
-            await marzban.delete_user(marzban_id)
+            if await marzban.delete_user(candidate):
+                deleted_in_marzban = True
+                break
         except Exception as exc:
-            logger.exception("Failed to delete Marzban user %s: %s", marzban_id, exc)
+            logger.exception("Failed to delete Marzban user %s: %s", candidate, exc)
             await message.answer("Не удалось удалить пользователя в Marzban.")
             return
 
     deleted = db.delete_user(telegram_id)
     if deleted:
         db.log_event(telegram_id, "admin_delete")
-    await message.answer(f"Пользователь telegram_id={telegram_id} удален.")
+    if deleted_in_marzban:
+        await message.answer(f"Пользователь telegram_id={telegram_id} удален.")
+    else:
+        await message.answer(
+            f"Локальный пользователь telegram_id={telegram_id} удален, "
+            "но в Marzban не найден."
+        )
