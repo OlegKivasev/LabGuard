@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import uvicorn
 
 from config import Settings
@@ -106,6 +107,12 @@ def _build_marzban_username(telegram_id: int, username: str) -> str:
     if not safe:
         safe = f"tg_{telegram_id}"
     return f"labguard_{safe}"[:48].rstrip("_")
+
+
+class AdminTrialPayload(BaseModel):
+    days: int = 14
+    unlimited: bool = False
+    no_trial_limits: bool = False
 
 
 def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastAPI:
@@ -229,6 +236,70 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         db.delete_user(telegram_id)
         db.log_event(telegram_id, "admin_delete_webapp")
         return {"ok": True, "marzban_changed": marzban_changed, "lock_cleared": True}
+
+    @app.post("/admin-app/api/user/{telegram_id}/trial")
+    async def admin_set_trial(
+        telegram_id: int,
+        payload: AdminTrialPayload,
+        token: str = Query(""),
+        init_data: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        _verify_admin(settings, token, x_tg_init_data or init_data)
+
+        user = db.get_user_by_telegram_id(telegram_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if payload.days < 1 or payload.days > 3650:
+            raise HTTPException(status_code=400, detail="days must be in range 1..3650")
+
+        target_dt = None
+        if not payload.unlimited:
+            target_dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=payload.days)
+        local_expires = (
+            "2099-12-31 23:59:59"
+            if payload.unlimited
+            else target_dt.strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+        marzban_changed = False
+        for candidate in _candidate_marzban_usernames(user, telegram_id):
+            if await marzban.update_user_trial(candidate, expire_at=target_dt, active=True):
+                marzban_changed = True
+                break
+
+        if not marzban_changed:
+            marzban_username = _build_marzban_username(telegram_id, str(user.get("username") or ""))
+            create_expiry = (
+                datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=36500)
+                if payload.unlimited
+                else target_dt
+            )
+            marzban_user = await marzban.create_user(username=marzban_username, expire_at=create_expiry)
+            marzban_changed = bool(marzban_user)
+            user = db.get_user_by_telegram_id(telegram_id) or user
+            db.set_marzban_binding(
+                telegram_id=telegram_id,
+                marzban_id=str(marzban_user.get("username", marzban_username)),
+                expires_at=local_expires,
+            )
+
+        db.set_user_expiry(telegram_id, local_expires)
+        db.set_no_trial_limits(telegram_id, payload.no_trial_limits)
+        if payload.no_trial_limits:
+            db.clear_trial_lock(telegram_id)
+        else:
+            db.mark_trial_used(telegram_id)
+
+        db.log_event(telegram_id, "admin_set_trial_webapp")
+        return {
+            "ok": True,
+            "expires_at": local_expires,
+            "unlimited": payload.unlimited,
+            "no_trial_limits": payload.no_trial_limits,
+            "marzban_changed": marzban_changed,
+        }
 
     @app.get("/app", response_class=HTMLResponse)
     async def user_app_page() -> HTMLResponse:
@@ -481,7 +552,7 @@ _ADMIN_APP_HTML = """<!doctype html>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Telegram ID</th><th>Username</th><th>Срок триала</th><th>Дата регистрации</th><th>Действия</th></tr>
+              <tr><th>Telegram ID</th><th>Username</th><th>Срок триала</th><th>Без лимитов</th><th>Дата регистрации</th><th>Действия</th></tr>
             </thead>
             <tbody id="usersBody"></tbody>
           </table>
@@ -534,6 +605,15 @@ _ADMIN_APP_HTML = """<!doctype html>
     async function deleteUser(telegramId) {
       const res = await fetch(withAuth(`/admin-app/api/user/${telegramId}`), { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error('delete failed')
+      return res.json()
+    }
+    async function setTrial(telegramId, days, unlimited, noTrialLimits) {
+      const res = await fetch(withAuth(`/admin-app/api/user/${telegramId}/trial`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ days, unlimited, no_trial_limits: noTrialLimits }),
+      })
+      if (!res.ok) throw new Error('set trial failed')
       return res.json()
     }
 
@@ -615,7 +695,8 @@ _ADMIN_APP_HTML = """<!doctype html>
         body.innerHTML = ''
         for (const u of usersPayload.users) {
           const tr = document.createElement('tr')
-          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.expires_at || '-'}</td><td>${u.created_at || '-'}</td><td><div class="actions"><button data-action="deactivate" data-id="${u.telegram_id}">Деактивировать</button><button class="red" data-action="delete" data-id="${u.telegram_id}">Удалить</button></div></td>`
+          const noLimits = Number(u.no_trial_limits || 0) === 1 ? '✅' : '—'
+          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.expires_at || '-'}</td><td>${noLimits}</td><td>${u.created_at || '-'}</td><td><div class="actions"><button data-action="trial" data-id="${u.telegram_id}">Триал</button><button data-action="deactivate" data-id="${u.telegram_id}">Деактивировать</button><button class="red" data-action="delete" data-id="${u.telegram_id}">Удалить</button></div></td>`
           body.appendChild(tr)
         }
         document.getElementById('usersHint').textContent = `Показано ${usersPayload.users.length} пользователей`
@@ -643,6 +724,21 @@ _ADMIN_APP_HTML = """<!doctype html>
         if (action === 'delete') {
           if (!confirm(`Удалить пользователя ${id}?`)) return
           await deleteUser(id)
+        }
+        if (action === 'trial') {
+          const unlimited = confirm(`Сделать для ${id} без срока?\nОК = без срока, Отмена = задать дни`)
+          let days = 14
+          if (!unlimited) {
+            const rawDays = prompt('На сколько дней выдать/возобновить триал?', '14')
+            if (rawDays === null) return
+            days = Number(rawDays)
+            if (!Number.isFinite(days) || days < 1) {
+              alert('Укажи число дней от 1')
+              return
+            }
+          }
+          const noTrialLimits = confirm('Включить галочку "без ограничений" (повторные триалы разрешены)?')
+          await setTrial(id, days, unlimited, noTrialLimits)
         }
         await refreshUsers()
         await refreshMetrics()

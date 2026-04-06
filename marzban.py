@@ -166,6 +166,25 @@ class MarzbanClient:
         response.raise_for_status()
         return True
 
+    async def update_user_trial(
+        self,
+        username: str,
+        expire_at: datetime | None,
+        active: bool = True,
+    ) -> bool:
+        payload: dict[str, Any] = {"status": "active" if active else "disabled"}
+        if expire_at is None:
+            payload["expire"] = 0
+        else:
+            expire_utc = expire_at if expire_at.tzinfo else expire_at.replace(tzinfo=timezone.utc)
+            payload["expire"] = int(expire_utc.timestamp())
+
+        response = await self._request_with_fallback("PUT", f"/api/user/{username}", json=payload)
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True
+
     async def delete_user(self, username: str) -> bool:
         response = await self._request_with_fallback("DELETE", f"/api/user/{username}")
         if response.status_code == 404:

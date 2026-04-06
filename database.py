@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     source        TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at    DATETIME,
+    no_trial_limits BOOLEAN DEFAULT 0,
     last_active   DATETIME,
     notified_3d   BOOLEAN DEFAULT 0,
     notified_1d   BOOLEAN DEFAULT 0,
@@ -73,6 +74,12 @@ class Database:
     def init_schema(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
+            user_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(users)").fetchall()
+            }
+            if "no_trial_limits" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN no_trial_limits BOOLEAN DEFAULT 0")
 
     def create_user_if_not_exists(
         self,
@@ -122,7 +129,7 @@ class Database:
             if not q:
                 rows = conn.execute(
                     """
-                    SELECT telegram_id, username, marzban_id, expires_at, created_at
+                    SELECT telegram_id, username, marzban_id, expires_at, created_at, no_trial_limits
                     FROM users
                     ORDER BY created_at DESC
                     LIMIT ?
@@ -134,7 +141,7 @@ class Database:
             pattern = f"%{q}%"
             rows = conn.execute(
                 """
-                SELECT telegram_id, username, marzban_id, expires_at, created_at
+                SELECT telegram_id, username, marzban_id, expires_at, created_at, no_trial_limits
                 FROM users
                 WHERE CAST(telegram_id AS TEXT) LIKE ?
                    OR LOWER(COALESCE(username, '')) LIKE LOWER(?)
@@ -154,11 +161,32 @@ class Database:
 
     def has_received_trial(self, telegram_id: int) -> bool:
         with self.connect() as conn:
+            no_limits = conn.execute(
+                "SELECT COALESCE(no_trial_limits, 0) FROM users WHERE telegram_id = ?",
+                (telegram_id,),
+            ).fetchone()
+            if no_limits is not None and int(no_limits[0] or 0) == 1:
+                return False
+
             locked = conn.execute(
                 "SELECT COUNT(*) FROM trial_locks WHERE telegram_id = ?",
                 (telegram_id,),
             ).fetchone()[0]
             return int(locked) > 0
+
+    def set_no_trial_limits(self, telegram_id: int, enabled: bool) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE users SET no_trial_limits = ? WHERE telegram_id = ?",
+                (1 if enabled else 0, telegram_id),
+            )
+
+    def set_user_expiry(self, telegram_id: int, expires_at: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE users SET expires_at = ?, notified_3d = 0, notified_1d = 0 WHERE telegram_id = ?",
+                (expires_at, telegram_id),
+            )
 
     def mark_trial_used(self, telegram_id: int) -> None:
         with self.connect() as conn:
