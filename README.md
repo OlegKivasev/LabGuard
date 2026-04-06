@@ -40,3 +40,8 @@ On startup, the bot creates SQLite tables automatically if they do not exist.
 On startup bot registers command menu in Telegram automatically.
 
 If Marzban uses a self-signed certificate, set `MARZBAN_VERIFY_TLS=false` temporarily.
+
+Admin commands (IDs from `ADMIN_TELEGRAM_IDS`):
+- `/admin_users [limit]`
+- `/admin_deactivate <telegram_id>`
+- `/admin_delete <telegram_id>`

@@ -162,3 +162,18 @@ class MarzbanClient:
         if response.status_code >= 400:
             raise RuntimeError(f"Marzban create user failed: {response.status_code} {response.text}")
         return response.json()
+
+    async def disable_user(self, username: str) -> bool:
+        payload = {"status": "disabled"}
+        response = await self._request_with_fallback("PUT", f"/api/user/{username}", json=payload)
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True
+
+    async def delete_user(self, username: str) -> bool:
+        response = await self._request_with_fallback("DELETE", f"/api/user/{username}")
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True

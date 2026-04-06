@@ -13,6 +13,12 @@ router = Router(name="get_vpn")
 logger = logging.getLogger(__name__)
 
 
+def _build_marzban_username(message: Message) -> str:
+    if message.from_user and message.from_user.username:
+        return message.from_user.username
+    return f"tg_{message.from_user.id}"
+
+
 @router.message(Command("get"))
 async def cmd_get(
     message: Message,
@@ -34,7 +40,7 @@ async def cmd_get(
         return
 
     expiry_dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=settings.free_trial_days)
-    marzban_username = f"tg_{message.from_user.id}"
+    marzban_username = _build_marzban_username(message)
 
     try:
         marzban_user = await marzban.create_user(
@@ -69,10 +75,12 @@ async def cmd_get(
         )
         return
 
+    protocol = config_text.split("://", 1)[0].upper() if "://" in config_text else "VPN"
+
     await message.answer(
         "Триал активирован.\n"
         f"Срок действия: до {expires_at} UTC\n\n"
-        "🔗 Твой VLESS конфиг:\n"
+        f"🔗 Твой {protocol} конфиг:\n"
         f"{config_text}\n\n"
         f"📦 Подписка: {subscription_url if subscription_url else 'недоступно'}"
     )

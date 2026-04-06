@@ -97,6 +97,19 @@ class Database:
 
             return dict(row)
 
+    def list_recent_users(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT telegram_id, username, marzban_id, expires_at, created_at
+                FROM users
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def log_event(self, telegram_id: int, event: str) -> None:
         with self.connect() as conn:
             conn.execute(
@@ -115,6 +128,30 @@ class Database:
                 "UPDATE users SET marzban_id = ?, expires_at = ? WHERE telegram_id = ?",
                 (marzban_id, expires_at, telegram_id),
             )
+
+    def clear_trial(self, telegram_id: int) -> bool:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE users
+                SET marzban_id = NULL,
+                    expires_at = NULL,
+                    notified_3d = 0,
+                    notified_1d = 0,
+                    gave_feedback = 0
+                WHERE telegram_id = ?
+                """,
+                (telegram_id,),
+            )
+            return cursor.rowcount > 0
+
+    def delete_user(self, telegram_id: int) -> bool:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM users WHERE telegram_id = ?",
+                (telegram_id,),
+            )
+            return cursor.rowcount > 0
 
     def ensure_trial(self, telegram_id: int, days: int = 14) -> str:
         with self.connect() as conn:

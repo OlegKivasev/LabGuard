@@ -15,6 +15,7 @@ class Settings:
     database_path: str
     free_trial_days: int
     support_bot_username: str
+    admin_telegram_ids: set[int]
 
     def missing_for_bot_start(self) -> list[str]:
         missing: list[str] = []
@@ -44,6 +45,16 @@ def load_settings() -> Settings:
     verify_raw = os.getenv("MARZBAN_VERIFY_TLS", "true").strip().lower()
     verify_tls = verify_raw not in {"0", "false", "no", "off"}
 
+    admin_ids_raw = os.getenv("ADMIN_TELEGRAM_IDS", "").strip()
+    admin_ids: set[int] = set()
+    if admin_ids_raw:
+        for part in admin_ids_raw.split(","):
+            value = part.strip()
+            if not value:
+                continue
+            if value.isdigit():
+                admin_ids.add(int(value))
+
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", "").strip(),
         marzban_base_url=os.getenv("MARZBAN_BASE_URL", "").strip(),
@@ -54,4 +65,5 @@ def load_settings() -> Settings:
         database_path=os.getenv("DATABASE_PATH", "./data/app.db").strip(),
         free_trial_days=int(os.getenv("FREE_TRIAL_DAYS", "14")),
         support_bot_username=os.getenv("SUPPORT_BOT_USERNAME", "").strip(),
+        admin_telegram_ids=admin_ids,
     )
