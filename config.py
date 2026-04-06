@@ -9,6 +9,9 @@ class Settings:
     bot_token: str
     marzban_base_url: str
     marzban_api_key: str
+    marzban_username: str
+    marzban_password: str
+    marzban_verify_tls: bool
     database_path: str
     free_trial_days: int
     support_bot_username: str
@@ -27,8 +30,10 @@ class Settings:
         if not self.marzban_base_url:
             missing.append("MARZBAN_BASE_URL")
 
-        if not self.marzban_api_key:
-            missing.append("MARZBAN_API_KEY")
+        has_token = bool(self.marzban_api_key)
+        has_credentials = bool(self.marzban_username and self.marzban_password)
+        if not has_token and not has_credentials:
+            missing.append("MARZBAN_API_KEY or MARZBAN_USERNAME+MARZBAN_PASSWORD")
 
         return missing
 
@@ -36,10 +41,16 @@ class Settings:
 def load_settings() -> Settings:
     load_dotenv()
 
+    verify_raw = os.getenv("MARZBAN_VERIFY_TLS", "true").strip().lower()
+    verify_tls = verify_raw not in {"0", "false", "no", "off"}
+
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", "").strip(),
         marzban_base_url=os.getenv("MARZBAN_BASE_URL", "").strip(),
         marzban_api_key=os.getenv("MARZBAN_API_KEY", "").strip(),
+        marzban_username=os.getenv("MARZBAN_USERNAME", "").strip(),
+        marzban_password=os.getenv("MARZBAN_PASSWORD", "").strip(),
+        marzban_verify_tls=verify_tls,
         database_path=os.getenv("DATABASE_PATH", "./data/app.db").strip(),
         free_trial_days=int(os.getenv("FREE_TRIAL_DAYS", "14")),
         support_bot_username=os.getenv("SUPPORT_BOT_USERNAME", "").strip(),

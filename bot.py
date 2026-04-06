@@ -56,6 +56,9 @@ async def check_marzban_connection() -> int:
     client = MarzbanClient(
         base_url=settings.marzban_base_url,
         api_key=settings.marzban_api_key,
+        username=settings.marzban_username,
+        password=settings.marzban_password,
+        verify_tls=settings.marzban_verify_tls,
     )
 
     try:
@@ -87,6 +90,13 @@ async def main() -> None:
     dp = Dispatcher()
     dp["db"] = database
     dp["settings"] = settings
+    dp["marzban"] = MarzbanClient(
+        base_url=settings.marzban_base_url,
+        api_key=settings.marzban_api_key,
+        username=settings.marzban_username,
+        password=settings.marzban_password,
+        verify_tls=settings.marzban_verify_tls,
+    )
     register_routers(dp)
 
     scheduler = build_scheduler()
