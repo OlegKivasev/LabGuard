@@ -110,6 +110,35 @@ class Database:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def search_users(self, query: str, limit: int = 30) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            q = query.strip()
+            if not q:
+                rows = conn.execute(
+                    """
+                    SELECT telegram_id, username, marzban_id, expires_at, created_at
+                    FROM users
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+                return [dict(row) for row in rows]
+
+            pattern = f"%{q}%"
+            rows = conn.execute(
+                """
+                SELECT telegram_id, username, marzban_id, expires_at, created_at
+                FROM users
+                WHERE CAST(telegram_id AS TEXT) LIKE ?
+                   OR LOWER(COALESCE(username, '')) LIKE LOWER(?)
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (pattern, pattern, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def log_event(self, telegram_id: int, event: str) -> None:
         with self.connect() as conn:
             conn.execute(

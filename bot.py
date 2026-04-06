@@ -91,13 +91,14 @@ async def main() -> None:
     dp = Dispatcher()
     dp["db"] = database
     dp["settings"] = settings
-    dp["marzban"] = MarzbanClient(
+    marzban_client = MarzbanClient(
         base_url=settings.marzban_base_url,
         api_key=settings.marzban_api_key,
         username=settings.marzban_username,
         password=settings.marzban_password,
         verify_tls=settings.marzban_verify_tls,
     )
+    dp["marzban"] = marzban_client
     register_routers(dp)
 
     scheduler = build_scheduler()
@@ -112,7 +113,7 @@ async def main() -> None:
     web_server = None
     web_task = None
     if settings.web_app_base_url:
-        web_server, web_task = await start_web_app_server(database, settings)
+        web_server, web_task = await start_web_app_server(database, settings, marzban_client)
 
     try:
         await dp.start_polling(bot)

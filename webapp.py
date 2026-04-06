@@ -7,6 +7,7 @@ import uvicorn
 from config import Settings
 from database import Database
 from miniapp_auth import verify_admin_token
+from marzban import MarzbanClient
 
 
 def _verify_admin(settings: Settings, token: str) -> int:
@@ -20,7 +21,16 @@ def _verify_admin(settings: Settings, token: str) -> int:
     return admin_id
 
 
-def build_app(db: Database, settings: Settings) -> FastAPI:
+def _candidate_marzban_usernames(user: dict, telegram_id: int) -> list[str]:
+    candidates: list[str] = []
+    for value in (user.get("marzban_id"), user.get("username"), f"tg_{telegram_id}"):
+        name = str(value or "").strip()
+        if name and name not in candidates:
+            candidates.append(name)
+    return candidates
+
+
+def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastAPI:
     app = FastAPI(title="VPN Admin Mini App", docs_url=None, redoc_url=None)
 
     @app.get("/admin-app", response_class=HTMLResponse)
@@ -34,15 +44,60 @@ def build_app(db: Database, settings: Settings) -> FastAPI:
         return db.get_admin_overview()
 
     @app.get("/admin-app/api/users")
-    async def admin_users(token: str = Query(""), limit: int = Query(20, ge=1, le=100)) -> dict:
+    async def admin_users(
+        token: str = Query(""),
+        limit: int = Query(30, ge=1, le=100),
+        q: str = Query(""),
+    ) -> dict:
         _verify_admin(settings, token)
-        return {"users": db.list_recent_users(limit=limit)}
+        users = db.search_users(query=q, limit=limit)
+        return {"users": users}
+
+    @app.post("/admin-app/api/user/{telegram_id}/deactivate")
+    async def admin_deactivate(telegram_id: int, token: str = Query("")) -> dict:
+        _verify_admin(settings, token)
+
+        user = db.get_user_by_telegram_id(telegram_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        marzban_changed = False
+        for candidate in _candidate_marzban_usernames(user, telegram_id):
+            if await marzban.disable_user(candidate):
+                marzban_changed = True
+                break
+
+        db.clear_trial(telegram_id)
+        db.log_event(telegram_id, "admin_deactivate_webapp")
+        return {"ok": True, "marzban_changed": marzban_changed}
+
+    @app.delete("/admin-app/api/user/{telegram_id}")
+    async def admin_delete(telegram_id: int, token: str = Query("")) -> dict:
+        _verify_admin(settings, token)
+
+        user = db.get_user_by_telegram_id(telegram_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        marzban_changed = False
+        for candidate in _candidate_marzban_usernames(user, telegram_id):
+            if await marzban.delete_user(candidate):
+                marzban_changed = True
+                break
+
+        db.delete_user(telegram_id)
+        db.log_event(telegram_id, "admin_delete_webapp")
+        return {"ok": True, "marzban_changed": marzban_changed}
 
     return app
 
 
-async def start_web_app_server(db: Database, settings: Settings) -> tuple[uvicorn.Server, asyncio.Task]:
-    app = build_app(db, settings)
+async def start_web_app_server(
+    db: Database,
+    settings: Settings,
+    marzban: MarzbanClient,
+) -> tuple[uvicorn.Server, asyncio.Task]:
+    app = build_app(db, settings, marzban)
     config = uvicorn.Config(
         app=app,
         host=settings.web_app_host,
@@ -68,8 +123,11 @@ _ADMIN_APP_HTML = """<!doctype html>
     .card { background: #1b2334; border: 1px solid #2a3550; border-radius: 12px; padding: 12px; }
     .k { font-size: 12px; opacity: .75; }
     .v { font-size: 24px; font-weight: 700; margin-top: 6px; }
-    .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    button { background: #2f6df6; color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; }
+    .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
+    button { background: #2f6df6; color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+    button.red { background: #d94c4c; }
+    .search { display: flex; gap: 8px; margin-bottom: 12px; }
+    input { flex: 1; background: #121a29; color: #e7eefc; border: 1px solid #2a3550; border-radius: 10px; padding: 8px 10px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { padding: 8px; border-bottom: 1px solid #2a3550; text-align: left; }
     th { opacity: .75; font-weight: 500; }
@@ -83,12 +141,16 @@ _ADMIN_APP_HTML = """<!doctype html>
       <h2 style="margin:0">LabGuard Admin</h2>
       <button id="refreshBtn">Обновить</button>
     </div>
+    <div class="search">
+      <input id="searchInput" placeholder="Поиск: Telegram ID или username" />
+      <button id="searchBtn">Найти</button>
+    </div>
     <div class="grid" id="metrics"></div>
     <div class="card">
       <div class="head"><h3 style="margin:0">Пользователи</h3></div>
       <table>
         <thead>
-          <tr><th>Telegram ID</th><th>Username</th><th>Marzban</th><th>Expires</th></tr>
+          <tr><th>Telegram ID</th><th>Username</th><th>Срок триала</th><th>Дата регистрации</th><th>Действия</th></tr>
         </thead>
         <tbody id="usersBody"></tbody>
       </table>
@@ -106,9 +168,22 @@ _ADMIN_APP_HTML = """<!doctype html>
       return res.json()
     }
 
-    async function loadUsers() {
-      const res = await fetch(`/admin-app/api/users?limit=30&token=${encodeURIComponent(token)}`)
+    async function loadUsers(search) {
+      const q = search ? `&q=${encodeURIComponent(search)}` : ''
+      const res = await fetch(`/admin-app/api/users?limit=50&token=${encodeURIComponent(token)}${q}`)
       if (!res.ok) throw new Error('users failed')
+      return res.json()
+    }
+
+    async function deactivateUser(telegramId) {
+      const res = await fetch(`/admin-app/api/user/${telegramId}/deactivate?token=${encodeURIComponent(token)}`, { method: 'POST' })
+      if (!res.ok) throw new Error('deactivate failed')
+      return res.json()
+    }
+
+    async function deleteUser(telegramId) {
+      const res = await fetch(`/admin-app/api/user/${telegramId}?token=${encodeURIComponent(token)}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('delete failed')
       return res.json()
     }
 
@@ -118,7 +193,8 @@ _ADMIN_APP_HTML = """<!doctype html>
 
     async function refresh() {
       try {
-        const [overview, usersPayload] = await Promise.all([loadOverview(), loadUsers()])
+        const searchText = document.getElementById('searchInput').value.trim()
+        const [overview, usersPayload] = await Promise.all([loadOverview(), loadUsers(searchText)])
         const metrics = document.getElementById('metrics')
         metrics.innerHTML = [
           metricCard('Всего пользователей', overview.total_users),
@@ -133,16 +209,45 @@ _ADMIN_APP_HTML = """<!doctype html>
         body.innerHTML = ''
         for (const u of usersPayload.users) {
           const tr = document.createElement('tr')
-          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.marzban_id || '-'}</td><td>${u.expires_at || '-'}</td>`
+          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.expires_at || '-'}</td><td>${u.created_at || '-'}</td><td><button data-action="deactivate" data-id="${u.telegram_id}">Деактивировать</button> <button class="red" data-action="delete" data-id="${u.telegram_id}">Удалить</button></td>`
           body.appendChild(tr)
         }
-        document.getElementById('hint').textContent = `Показано ${usersPayload.users.length} последних пользователей`
+        document.getElementById('hint').textContent = `Показано ${usersPayload.users.length} пользователей`
       } catch (e) {
         document.getElementById('hint').textContent = 'Ошибка загрузки данных'
       }
     }
 
+    document.getElementById('usersBody').addEventListener('click', async (event) => {
+      const target = event.target
+      if (!(target instanceof HTMLButtonElement)) return
+      const action = target.dataset.action
+      const id = target.dataset.id
+      if (!action || !id) return
+
+      try {
+        if (action === 'deactivate') {
+          if (!confirm(`Деактивировать триал для ${id}?`)) return
+          await deactivateUser(id)
+        }
+        if (action === 'delete') {
+          if (!confirm(`Удалить пользователя ${id}?`)) return
+          await deleteUser(id)
+        }
+        await refresh()
+      } catch (e) {
+        document.getElementById('hint').textContent = 'Ошибка выполнения действия'
+      }
+    })
+
     document.getElementById('refreshBtn').addEventListener('click', refresh)
+    document.getElementById('searchBtn').addEventListener('click', refresh)
+    document.getElementById('searchInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        refresh()
+      }
+    })
     refresh()
   </script>
 </body>
