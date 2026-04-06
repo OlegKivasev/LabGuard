@@ -9,13 +9,9 @@ from database import Database
 from marzban import MarzbanClient
 
 from .get_vpn import cmd_get
-from .help import cmd_apps, cmd_help
 from .keyboards import (
-    CB_APPS,
-    CB_BACK,
     CB_GET_CONFIRM,
     CB_GET_INFO,
-    CB_HELP,
     CB_STATUS,
     CB_SUPPORT,
     CB_SUPPORT_CANCEL,
@@ -48,19 +44,6 @@ async def cmd_menu(message: Message, db: Database) -> None:
 
     db.log_event(message.from_user.id, "menu")
     await message.answer("Главное меню 👇", reply_markup=main_menu_for_user(existing))
-
-
-@router.callback_query(F.data == CB_BACK)
-async def cb_back(callback: CallbackQuery, db: Database) -> None:
-    user = None
-    if callback.from_user:
-        db.touch_last_active(callback.from_user.id)
-        db.log_event(callback.from_user.id, "menu_back")
-        user = db.get_user_by_telegram_id(callback.from_user.id)
-
-    if callback.message:
-        await callback.message.answer("Главное меню 👇", reply_markup=main_menu_for_user(user))
-    await callback.answer()
 
 
 @router.callback_query(F.data == CB_GET_INFO)
@@ -98,20 +81,6 @@ async def cb_get_confirm(
 async def cb_status(callback: CallbackQuery, db: Database) -> None:
     if callback.message:
         await cmd_status(callback.message, db)
-    await callback.answer()
-
-
-@router.callback_query(F.data == CB_HELP)
-async def cb_help(callback: CallbackQuery, db: Database) -> None:
-    if callback.message:
-        await cmd_help(callback.message, db)
-    await callback.answer()
-
-
-@router.callback_query(F.data == CB_APPS)
-async def cb_apps(callback: CallbackQuery, db: Database) -> None:
-    if callback.message:
-        await cmd_apps(callback.message, db)
     await callback.answer()
 
 

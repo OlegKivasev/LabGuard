@@ -1,8 +1,10 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import uvicorn
 
 from config import Settings
@@ -48,6 +50,57 @@ def _candidate_marzban_usernames(user: dict, telegram_id: int) -> list[str]:
         if name and name not in candidates:
             candidates.append(name)
     return candidates
+
+
+def _verify_user(settings: Settings, init_data: str) -> tuple[int, str]:
+    payload = verify_telegram_init_data(settings.bot_token, init_data)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid Telegram auth")
+    return payload
+
+
+def _parse_sqlite_dt(value: str) -> datetime:
+    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+
+
+def _extract_subscription_text(marzban_user: dict) -> tuple[str, bool]:
+    for key in ("subscription_url", "subscription_link", "sub_url", "subscription"):
+        value = str(marzban_user.get(key, "")).strip()
+        if value:
+            return value, True
+
+    for key in ("subscription_urls", "subscriptions"):
+        values = marzban_user.get(key)
+        if isinstance(values, list):
+            for value in values:
+                text = str(value).strip()
+                if text:
+                    return text, True
+
+    links = marzban_user.get("links") or []
+    for link in links:
+        link_text = str(link).strip()
+        if link_text.lower().startswith("vless://"):
+            return link_text, False
+
+    return "", False
+
+
+def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
+    url = raw_url.strip()
+    if not url or url.startswith("vless://"):
+        return url
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+
+    base = base_url.strip().rstrip("/")
+    if not base:
+        return url
+    return f"{base}/{url.lstrip('/')}"
+
+
+class SupportPayload(BaseModel):
+    text: str
 
 
 def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastAPI:
@@ -171,6 +224,155 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         db.delete_user(telegram_id)
         db.log_event(telegram_id, "admin_delete_webapp")
         return {"ok": True, "marzban_changed": marzban_changed, "lock_cleared": True}
+
+    @app.get("/app", response_class=HTMLResponse)
+    async def user_app_page() -> HTMLResponse:
+        return HTMLResponse(_USER_APP_HTML)
+
+    @app.get("/app/api/status")
+    async def user_status(
+        init_data: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        telegram_id, username = _verify_user(settings, x_tg_init_data or init_data)
+
+        user = db.get_user_by_telegram_id(telegram_id)
+        if user is None and not db.has_received_trial(telegram_id):
+            db.create_user_if_not_exists(telegram_id=telegram_id, username=username or None)
+            user = db.get_user_by_telegram_id(telegram_id)
+        elif user is not None:
+            db.touch_last_active(telegram_id)
+
+        db.log_event(telegram_id, "app_status")
+        expires_raw = user.get("expires_at") if user else None
+        is_active = False
+        expires_at = ""
+        remaining_days = 0
+        if expires_raw:
+            dt = _parse_sqlite_dt(str(expires_raw))
+            now = datetime.now(timezone.utc)
+            is_active = dt > now
+            remaining_days = max(0, (dt - now).days)
+            expires_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        return {
+            "ok": True,
+            "is_active": is_active,
+            "expires_at": expires_at,
+            "remaining_days": remaining_days,
+            "trial_used": db.has_received_trial(telegram_id),
+            "support_username": settings.support_bot_username,
+            "is_admin": _is_admin_allowed(settings, telegram_id, username),
+        }
+
+    @app.post("/app/api/get-vpn")
+    async def user_get_vpn(
+        init_data: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        telegram_id, username = _verify_user(settings, x_tg_init_data or init_data)
+
+        existing = db.get_user_by_telegram_id(telegram_id)
+        if existing and existing.get("expires_at"):
+            expires_at_dt = _parse_sqlite_dt(str(existing["expires_at"]))
+            now = datetime.now(timezone.utc)
+            if expires_at_dt > now:
+                marzban_user = None
+                for candidate in _candidate_marzban_usernames(existing, telegram_id):
+                    marzban_user = await marzban.get_user(candidate)
+                    if marzban_user:
+                        break
+
+                sub_text = ""
+                is_subscription = False
+                if marzban_user:
+                    sub_text, is_subscription = _extract_subscription_text(marzban_user)
+                    if is_subscription:
+                        sub_text = _normalize_subscription_url(sub_text, marzban.base_url)
+
+                db.mark_trial_used(telegram_id)
+                db.touch_last_active(telegram_id)
+                db.log_event(telegram_id, "app_get_existing")
+                return {
+                    "ok": True,
+                    "status": "already_active",
+                    "expires_at": expires_at_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                    "remaining_days": max(0, (expires_at_dt - now).days),
+                    "subscription_url": sub_text,
+                    "is_subscription": is_subscription,
+                }
+
+        if db.has_received_trial(telegram_id):
+            db.touch_last_active(telegram_id)
+            db.log_event(telegram_id, "app_get_denied_finished")
+            return {
+                "ok": False,
+                "status": "denied",
+                "message": "Пробный период уже был использован и повторно не выдается.",
+            }
+
+        db.create_user_if_not_exists(telegram_id=telegram_id, username=username or None)
+        if existing is None:
+            existing = db.get_user_by_telegram_id(telegram_id)
+
+        if not marzban.is_configured:
+            raise HTTPException(status_code=503, detail="Marzban API не настроен")
+
+        expiry_dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=settings.free_trial_days)
+        marzban_username = username or f"tg_{telegram_id}"
+
+        try:
+            marzban_user = await marzban.create_user(username=marzban_username, expire_at=expiry_dt)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Не удалось создать подписку: {exc}") from exc
+
+        expires_at = datetime.fromtimestamp(
+            int(marzban_user.get("expire", int(expiry_dt.timestamp()))),
+            tz=timezone.utc,
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        db.set_marzban_binding(
+            telegram_id=telegram_id,
+            marzban_id=str(marzban_user.get("username", marzban_username)),
+            expires_at=expires_at,
+        )
+        db.mark_trial_used(telegram_id)
+        db.touch_last_active(telegram_id)
+        db.log_event(telegram_id, "app_get")
+
+        config_text, is_subscription = _extract_subscription_text(marzban_user)
+        if is_subscription:
+            config_text = _normalize_subscription_url(config_text, marzban.base_url)
+
+        return {
+            "ok": True,
+            "status": "activated",
+            "expires_at": expires_at,
+            "subscription_url": config_text,
+            "is_subscription": is_subscription,
+        }
+
+    @app.post("/app/api/support")
+    async def user_support(
+        payload: SupportPayload,
+        init_data: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        telegram_id, username = _verify_user(settings, x_tg_init_data or init_data)
+        text = payload.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Пустое сообщение")
+
+        user = db.get_user_by_telegram_id(telegram_id)
+        if user is None and not db.has_received_trial(telegram_id):
+            db.create_user_if_not_exists(telegram_id=telegram_id, username=username or None)
+
+        ticket_id = db.create_ticket(telegram_id, text)
+        db.touch_last_active(telegram_id)
+        db.log_event(telegram_id, "app_support_ticket")
+        return {"ok": True, "ticket_id": ticket_id}
 
     return app
 
@@ -438,6 +640,233 @@ _ADMIN_APP_HTML = """<!doctype html>
     })
 
     refreshAll()
+  </script>
+</body>
+</html>
+"""
+
+
+_USER_APP_HTML = """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LabGuard</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, Segoe UI, sans-serif;
+      background: radial-gradient(circle at top, #1f2937 0%, #0b1020 60%, #070b14 100%);
+      color: #e5ecff;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 14px; }
+    .card {
+      background: rgba(19, 28, 48, 0.86);
+      border: 1px solid #2b3859;
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    .muted { opacity: .78; font-size: 13px; }
+    .status { font-size: 16px; margin: 6px 0; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.secondary { background: #334155; }
+    button:disabled { opacity: .6; cursor: default; }
+    textarea {
+      width: 100%;
+      min-height: 88px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #e5ecff;
+      padding: 10px;
+      resize: vertical;
+    }
+    .sub-link {
+      margin-top: 8px;
+      font-size: 13px;
+      word-break: break-all;
+      padding: 8px;
+      border-radius: 10px;
+      background: #0f172a;
+      border: 1px solid #334155;
+    }
+    .alert { margin-top: 8px; font-size: 13px; color: #fca5a5; }
+    .ok { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>LabGuard</h1>
+      <div class="muted">Управление VPN в одном окне</div>
+      <div class="row" style="margin-top: 10px;">
+        <button id="adminSwitchBtn" class="secondary" style="display:none">Перейти в админ-панель</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Статус</h2>
+      <div id="statusText" class="status">Загружаем...</div>
+      <div id="statusMeta" class="muted"></div>
+      <div id="statusError" class="alert"></div>
+      <div class="row" style="margin-top: 10px;">
+        <button id="getVpnBtn">Получить VPN</button>
+        <button id="refreshBtn" class="secondary">Обновить статус</button>
+      </div>
+      <div id="subLink" class="sub-link" style="display:none"></div>
+      <div class="row" style="margin-top: 8px;">
+        <button id="copyBtn" class="secondary" style="display:none">Скопировать ссылку</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Поддержка</h2>
+      <textarea id="supportText" placeholder="Опиши проблему одним сообщением"></textarea>
+      <div class="row" style="margin-top: 10px;">
+        <button id="supportBtn">Отправить</button>
+      </div>
+      <div id="supportInfo" class="muted" style="margin-top: 8px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null
+    const initData = tg ? (tg.initData || '') : ''
+    if (tg) { tg.ready(); tg.expand() }
+
+    function authHeaders() { return initData ? { 'X-TG-Init-Data': initData } : {} }
+    function withAuth(url) {
+      const initQ = initData ? `?init_data=${encodeURIComponent(initData)}` : ''
+      return `${url}${initQ}`
+    }
+
+    let latestSubscriptionUrl = ''
+
+    function renderStatus(data) {
+      const statusText = document.getElementById('statusText')
+      const statusMeta = document.getElementById('statusMeta')
+      if (data.is_active) {
+        statusText.textContent = 'Активен'
+        statusText.classList.add('ok')
+        statusMeta.textContent = `Осталось: ${data.remaining_days} дн. До: ${data.expires_at} UTC`
+      } else if (data.trial_used) {
+        statusText.textContent = 'Триал завершен'
+        statusText.classList.remove('ok')
+        statusMeta.textContent = 'Повторная выдача недоступна. Напиши в поддержку.'
+      } else {
+        statusText.textContent = 'Не активирован'
+        statusText.classList.remove('ok')
+        statusMeta.textContent = 'Нажми «Получить VPN», чтобы активировать подписку.'
+      }
+      if (data.support_username) {
+        document.getElementById('supportInfo').textContent = `Можно также написать: @${data.support_username}`
+      }
+      const adminBtn = document.getElementById('adminSwitchBtn')
+      adminBtn.style.display = data.is_admin ? 'inline-block' : 'none'
+    }
+
+    function showSubscription(url) {
+      latestSubscriptionUrl = url || ''
+      const box = document.getElementById('subLink')
+      const copyBtn = document.getElementById('copyBtn')
+      if (!latestSubscriptionUrl) {
+        box.style.display = 'none'
+        copyBtn.style.display = 'none'
+        return
+      }
+      box.style.display = 'block'
+      box.textContent = latestSubscriptionUrl
+      copyBtn.style.display = 'inline-block'
+    }
+
+    async function loadStatus() {
+      document.getElementById('statusError').textContent = ''
+      try {
+        const res = await fetch(withAuth('/app/api/status'), { headers: authHeaders() })
+        if (!res.ok) throw new Error('status_failed')
+        const data = await res.json()
+        renderStatus(data)
+      } catch (e) {
+        document.getElementById('statusError').textContent = 'Не удалось загрузить статус. Открой приложение из Telegram.'
+      }
+    }
+
+    async function getVpn() {
+      const btn = document.getElementById('getVpnBtn')
+      btn.disabled = true
+      document.getElementById('statusError').textContent = ''
+      try {
+        const res = await fetch(withAuth('/app/api/get-vpn'), { method: 'POST', headers: authHeaders() })
+        const data = await res.json()
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.detail || data.message || 'Не удалось получить VPN')
+        }
+        if (data.subscription_url) showSubscription(data.subscription_url)
+        await loadStatus()
+      } catch (e) {
+        document.getElementById('statusError').textContent = String(e.message || e)
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    async function sendSupport() {
+      const textEl = document.getElementById('supportText')
+      const btn = document.getElementById('supportBtn')
+      const text = textEl.value.trim()
+      if (!text) return
+
+      btn.disabled = true
+      try {
+        const res = await fetch(withAuth('/app/api/support'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ text }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.ok) throw new Error(data.detail || 'Не удалось отправить')
+        textEl.value = ''
+        document.getElementById('supportInfo').textContent = `Обращение отправлено: #${data.ticket_id}`
+      } catch (e) {
+        document.getElementById('supportInfo').textContent = String(e.message || e)
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadStatus)
+    document.getElementById('getVpnBtn').addEventListener('click', getVpn)
+    document.getElementById('supportBtn').addEventListener('click', sendSupport)
+    document.getElementById('adminSwitchBtn').addEventListener('click', () => {
+      if (!initData) return
+      window.location.href = `/admin-app?init_data=${encodeURIComponent(initData)}`
+    })
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      if (!latestSubscriptionUrl) return
+      try {
+        await navigator.clipboard.writeText(latestSubscriptionUrl)
+        document.getElementById('supportInfo').textContent = 'Ссылка скопирована'
+      } catch (e) {
+        document.getElementById('supportInfo').textContent = latestSubscriptionUrl
+      }
+    })
+
+    loadStatus()
   </script>
 </body>
 </html>

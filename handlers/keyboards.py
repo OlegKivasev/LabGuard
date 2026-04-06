@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 
 CB_GET_INFO = "menu:get_info"
@@ -43,5 +43,14 @@ def support_wait_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Отмена", callback_data=CB_SUPPORT_CANCEL)],
+        ]
+    )
+
+
+def open_app_keyboard(web_app_base_url: str) -> InlineKeyboardMarkup:
+    app_url = f"{web_app_base_url.rstrip('/')}/app"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Открыть приложение", web_app=WebAppInfo(url=app_url))],
         ]
     )

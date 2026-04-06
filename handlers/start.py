@@ -4,7 +4,7 @@ from aiogram.types import Message
 
 from config import Settings
 from database import Database
-from .keyboards import post_subscription_keyboard
+from .keyboards import open_app_keyboard, post_subscription_keyboard
 from .menu_context import main_menu_for_user
 
 router = Router(name="start")
@@ -27,6 +27,14 @@ async def cmd_start(message: Message, db: Database, settings: Settings) -> None:
 
     db.log_event(message.from_user.id, "start")
 
+    if settings.web_app_base_url:
+        await message.answer(
+            "Привет! Это сервис LabGuard: здесь можно получить VPN, проверить статус и написать в поддержку.\n\n"
+            "Открой приложение кнопкой ниже.",
+            reply_markup=open_app_keyboard(settings.web_app_base_url),
+        )
+        return
+
     if existing is None and not has_received_trial:
         await message.answer(
             "Привет! Мы не берем деньги за этот доступ и не собираем логи твоего интернет-трафика.\n"
@@ -34,10 +42,9 @@ async def cmd_start(message: Message, db: Database, settings: Settings) -> None:
             "Начни с кнопки «Получить VPN».",
             reply_markup=main_menu_for_user(existing),
         )
-    else:
-        await message.answer(
-            "С возвращением! Проверь «Мой статус».",
-            reply_markup=post_subscription_keyboard(),
-        )
+        return
 
-    _ = settings
+    await message.answer(
+        "С возвращением! Проверь «Мой статус».",
+        reply_markup=post_subscription_keyboard(),
+    )

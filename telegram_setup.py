@@ -1,5 +1,5 @@
 from aiogram import Bot
-from aiogram.types import BotCommand, BotCommandScopeChat, MenuButtonCommands
+from aiogram.types import BotCommand, BotCommandScopeChat, MenuButtonCommands, MenuButtonWebApp, WebAppInfo
 
 from config import Settings
 
@@ -39,7 +39,13 @@ async def setup_bot(bot: Bot, settings: Settings) -> None:
         language_code="ru",
     )
 
-    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    if settings.web_app_base_url:
+        app_url = f"{settings.web_app_base_url.rstrip('/')}/app"
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="Open", web_app=WebAppInfo(url=app_url))
+        )
+    else:
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
 
     for admin_id in settings.admin_telegram_ids:
         await bot.set_my_commands(

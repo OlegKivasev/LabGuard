@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
+from urllib.parse import urlparse
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -46,6 +47,22 @@ def _extract_subscription_text(marzban_user: dict) -> tuple[str, bool]:
             return link_text, False
 
     return "", False
+
+
+def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
+    url = raw_url.strip()
+    if not url:
+        return url
+
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        return url
+
+    base = base_url.strip().rstrip("/")
+    if not base:
+        return url
+
+    return f"{base}/{url.lstrip('/')}"
 
 
 @router.message(Command("get"))
@@ -149,6 +166,8 @@ async def cmd_get(
     db.log_event(message.from_user.id, "get")
 
     config_text, is_subscription = _extract_subscription_text(marzban_user)
+    if is_subscription:
+        config_text = _normalize_subscription_url(config_text, marzban.base_url)
 
     if not config_text:
         await message.answer(
