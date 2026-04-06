@@ -3,10 +3,11 @@ import logging
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
 from config import Settings
 from database import Database
+from miniapp_auth import sign_admin_token
 from marzban import MarzbanClient
 
 router = Router(name="admin")
@@ -30,6 +31,31 @@ def _candidate_marzban_usernames(user: dict, telegram_id: int) -> list[str]:
         if name and name not in candidates:
             candidates.append(name)
     return candidates
+
+
+@router.message(Command("admin_app"))
+async def cmd_admin_app(message: Message, settings: Settings) -> None:
+    if not _is_admin(message, settings):
+        await message.answer("Нет доступа к admin-командам.")
+        return
+
+    if not settings.web_app_base_url:
+        await message.answer("WEB_APP_BASE_URL не настроен в .env")
+        return
+
+    token = sign_admin_token(
+        secret=settings.bot_token,
+        admin_id=message.from_user.id,
+        ttl_minutes=settings.web_app_token_ttl_minutes,
+    )
+    url = f"{settings.web_app_base_url.rstrip('/')}/admin-app?token={token}"
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Открыть админ-приложение", web_app=WebAppInfo(url=url))]
+        ]
+    )
+    await message.answer("Открой админ-приложение внутри Telegram:", reply_markup=keyboard)
 
 
 @router.message(Command("admin_users"))

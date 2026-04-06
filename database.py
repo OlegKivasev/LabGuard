@@ -232,3 +232,43 @@ class Database:
                 (ticket_id, text),
             )
             return ticket_id
+
+    def get_admin_overview(self) -> dict[str, int]:
+        with self.connect() as conn:
+            total_users = int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+            active_trials = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE expires_at IS NOT NULL AND datetime(expires_at) > datetime('now')
+                    """
+                ).fetchone()[0]
+            )
+            new_today = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM users WHERE date(created_at) = date('now')"
+                ).fetchone()[0]
+            )
+            get_today = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM events WHERE event = 'get' AND date(created_at) = date('now')"
+                ).fetchone()[0]
+            )
+            start_today = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM events WHERE event = 'start' AND date(created_at) = date('now')"
+                ).fetchone()[0]
+            )
+            open_tickets = int(
+                conn.execute("SELECT COUNT(*) FROM tickets WHERE status = 'open'").fetchone()[0]
+            )
+
+        return {
+            "total_users": total_users,
+            "active_trials": active_trials,
+            "new_today": new_today,
+            "start_today": start_today,
+            "get_today": get_today,
+            "open_tickets": open_tickets,
+        }

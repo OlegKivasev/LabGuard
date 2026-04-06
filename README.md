@@ -42,8 +42,15 @@ On startup bot registers command menu in Telegram automatically.
 If Marzban uses a self-signed certificate, set `MARZBAN_VERIFY_TLS=false` temporarily.
 
 Admin commands (IDs from `ADMIN_TELEGRAM_IDS`):
+- `/admin_app`
 - `/admin_users [limit]`
 - `/admin_deactivate <telegram_id>`
 - `/admin_delete <telegram_id>`
 
 `ADMIN_TELEGRAM_IDS` accepts Telegram numeric IDs and/or usernames (e.g. `123456789,@myuser`).
+
+Mini App settings:
+- `WEB_APP_BASE_URL` (public URL, e.g. `https://bot.example.com`)
+- `WEB_APP_HOST` (default `0.0.0.0`)
+- `WEB_APP_PORT` (default `8081`)
+- `WEB_APP_TOKEN_TTL_MINUTES` (default `30`)

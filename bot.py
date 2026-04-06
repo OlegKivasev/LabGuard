@@ -11,6 +11,7 @@ from handlers import register_routers
 from marzban import MarzbanClient
 from scheduler import build_scheduler, send_expiry_notifications
 from telegram_setup import setup_bot
+from webapp import start_web_app_server
 
 
 def check_config() -> int:
@@ -108,9 +109,17 @@ async def main() -> None:
     )
     scheduler.start()
 
+    web_server = None
+    web_task = None
+    if settings.web_app_base_url:
+        web_server, web_task = await start_web_app_server(database, settings)
+
     try:
         await dp.start_polling(bot)
     finally:
+        if web_server is not None and web_task is not None:
+            web_server.should_exit = True
+            await web_task
         scheduler.shutdown(wait=False)
 
 

@@ -17,6 +17,10 @@ class Settings:
     support_bot_username: str
     admin_telegram_ids: set[int]
     admin_telegram_usernames: set[str]
+    web_app_base_url: str
+    web_app_host: str
+    web_app_port: int
+    web_app_token_ttl_minutes: int
 
     def missing_for_bot_start(self) -> list[str]:
         missing: list[str] = []
@@ -71,4 +75,8 @@ def load_settings() -> Settings:
         support_bot_username=os.getenv("SUPPORT_BOT_USERNAME", "").strip(),
         admin_telegram_ids=admin_ids,
         admin_telegram_usernames=admin_usernames,
+        web_app_base_url=os.getenv("WEB_APP_BASE_URL", "").strip(),
+        web_app_host=os.getenv("WEB_APP_HOST", "0.0.0.0").strip(),
+        web_app_port=int(os.getenv("WEB_APP_PORT", "8081")),
+        web_app_token_ttl_minutes=int(os.getenv("WEB_APP_TOKEN_TTL_MINUTES", "30")),
     )
