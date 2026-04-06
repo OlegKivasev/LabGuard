@@ -158,7 +158,8 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
 
         user = db.get_user_by_telegram_id(telegram_id)
         if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
+            lock_cleared = db.clear_trial_lock(telegram_id)
+            return {"ok": True, "marzban_changed": False, "lock_cleared": lock_cleared}
 
         marzban_changed = False
         for candidate in _candidate_marzban_usernames(user, telegram_id):
@@ -169,7 +170,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         db.clear_trial_lock(telegram_id)
         db.delete_user(telegram_id)
         db.log_event(telegram_id, "admin_delete_webapp")
-        return {"ok": True, "marzban_changed": marzban_changed}
+        return {"ok": True, "marzban_changed": marzban_changed, "lock_cleared": True}
 
     return app
 

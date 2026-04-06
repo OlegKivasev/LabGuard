@@ -103,7 +103,13 @@ async def cmd_admin_deactivate(
     telegram_id = int(args)
     user = db.get_user_by_telegram_id(telegram_id)
     if user is None:
-        await message.answer("Пользователь не найден в локальной базе.")
+        lock_cleared = db.clear_trial_lock(telegram_id)
+        if lock_cleared:
+            await message.answer(
+                f"Пользователь не найден, но ограничение триала снято для telegram_id={telegram_id}."
+            )
+        else:
+            await message.answer("Пользователь не найден в локальной базе.")
         return
 
     marzban_id = str(user.get("marzban_id") or "").strip()

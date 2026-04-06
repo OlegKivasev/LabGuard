@@ -167,12 +167,13 @@ class Database:
                 (telegram_id,),
             )
 
-    def clear_trial_lock(self, telegram_id: int) -> None:
+    def clear_trial_lock(self, telegram_id: int) -> bool:
         with self.connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "DELETE FROM trial_locks WHERE telegram_id = ?",
                 (telegram_id,),
             )
+            return cursor.rowcount > 0
 
     def set_marzban_binding(
         self,
