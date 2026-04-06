@@ -33,11 +33,6 @@ async def cmd_get(
     if message.from_user is None:
         return
 
-    db.create_user_if_not_exists(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-    )
-
     existing = db.get_user_by_telegram_id(message.from_user.id)
     if existing and existing.get("expires_at"):
         try:
@@ -66,6 +61,11 @@ async def cmd_get(
             "Проверь текущий статус командой /status"
         )
         return
+
+    db.create_user_if_not_exists(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+    )
 
     if not marzban.is_configured:
         await message.answer(

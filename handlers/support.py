@@ -14,11 +14,15 @@ async def cmd_support(message: Message, command: CommandObject, db: Database, se
     if message.from_user is None:
         return
 
-    db.create_user_if_not_exists(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-    )
-    db.touch_last_active(message.from_user.id)
+    existing = db.get_user_by_telegram_id(message.from_user.id)
+    if existing is None and not db.has_received_trial(message.from_user.id):
+        db.create_user_if_not_exists(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+        )
+    elif existing is not None:
+        db.touch_last_active(message.from_user.id)
+
     db.log_event(message.from_user.id, "support")
 
     text = (command.args or "").strip()
