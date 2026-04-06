@@ -26,6 +26,15 @@ async def setup_bot(bot: Bot, settings: Settings) -> None:
     await bot.set_my_short_description(short_description=BOT_SHORT_DESCRIPTION)
     await bot.set_my_description(description=BOT_DESCRIPTION)
 
+    await bot.set_my_short_description(
+        short_description=BOT_SHORT_DESCRIPTION,
+        language_code="ru",
+    )
+    await bot.set_my_description(
+        description=BOT_DESCRIPTION,
+        language_code="ru",
+    )
+
     if settings.web_app_base_url:
         web_url = f"{settings.web_app_base_url.rstrip('/')}/admin-app"
         await bot.set_chat_menu_button(
