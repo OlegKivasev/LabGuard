@@ -4,7 +4,6 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 import uvicorn
 
 from config import Settings
@@ -97,10 +96,6 @@ def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
     if not base:
         return url
     return f"{base}/{url.lstrip('/')}"
-
-
-class SupportPayload(BaseModel):
-    text: str
 
 
 def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastAPI:
@@ -369,26 +364,6 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
             "subscription_url": config_text,
             "is_subscription": is_subscription,
         }
-
-    @app.post("/app/api/support")
-    async def user_support(
-        payload: SupportPayload,
-        init_data: str = Query(""),
-        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
-    ) -> dict:
-        telegram_id, username = _verify_user(settings, x_tg_init_data or init_data)
-        text = payload.text.strip()
-        if not text:
-            raise HTTPException(status_code=400, detail="Пустое сообщение")
-
-        user = db.get_user_by_telegram_id(telegram_id)
-        if user is None and not db.has_received_trial(telegram_id):
-            db.create_user_if_not_exists(telegram_id=telegram_id, username=username or None)
-
-        ticket_id = db.create_ticket(telegram_id, text)
-        db.touch_last_active(telegram_id)
-        db.log_event(telegram_id, "app_support_ticket")
-        return {"ok": True, "ticket_id": ticket_id}
 
     return app
 
@@ -716,16 +691,6 @@ _USER_APP_HTML = """<!doctype html>
     }
     button.secondary { background: #334155; }
     button:disabled { opacity: .6; cursor: default; }
-    textarea {
-      width: 100%;
-      min-height: 88px;
-      border-radius: 10px;
-      border: 1px solid #334155;
-      background: #0f172a;
-      color: #e5ecff;
-      padding: 10px;
-      resize: vertical;
-    }
     .sub-link {
       margin-top: 8px;
       font-size: 13px;
@@ -766,11 +731,10 @@ _USER_APP_HTML = """<!doctype html>
 
     <div class="card">
       <h2>Поддержка</h2>
-      <textarea id="supportText" placeholder="Опиши проблему одним сообщением"></textarea>
       <div class="row" style="margin-top: 10px;">
-        <button id="supportBtn">Отправить</button>
+        <button id="supportLinkBtn">Открыть бота поддержки</button>
       </div>
-      <div id="supportInfo" class="muted" style="margin-top: 8px;"></div>
+      <div id="supportInfo" class="muted" style="margin-top: 8px;">Раздел поддержки в приложении скоро появится.</div>
     </div>
   </div>
 
@@ -786,7 +750,6 @@ _USER_APP_HTML = """<!doctype html>
     }
 
     let latestSubscriptionUrl = ''
-    let primaryMode = 'get'
 
     function renderStatus(data) {
       const statusText = document.getElementById('statusText')
@@ -813,24 +776,25 @@ _USER_APP_HTML = """<!doctype html>
 
       if (data.trial_used) {
         refreshBtn.style.display = 'inline-block'
-        if (latestSubscriptionUrl) {
-          primaryMode = 'open'
-          getBtn.style.display = 'inline-block'
-          getBtn.textContent = 'Открыть ссылку'
-        } else {
-          primaryMode = 'none'
-          getBtn.style.display = 'none'
-        }
+        getBtn.style.display = 'none'
       } else {
-        primaryMode = 'get'
         getBtn.style.display = 'inline-block'
         getBtn.textContent = 'Получить VPN'
         refreshBtn.style.display = 'none'
       }
 
+      const supportBtn = document.getElementById('supportLinkBtn')
+      const supportInfo = document.getElementById('supportInfo')
       if (data.support_username) {
-        document.getElementById('supportInfo').textContent = `Можно также написать: @${data.support_username}`
+        supportBtn.disabled = false
+        supportBtn.dataset.username = data.support_username
+        supportInfo.textContent = `Напиши напрямую: @${data.support_username}`
+      } else {
+        supportBtn.disabled = true
+        supportBtn.dataset.username = ''
+        supportInfo.textContent = 'Поддержка скоро появится.'
       }
+
       const adminBtn = document.getElementById('adminSwitchBtn')
       adminBtn.style.display = data.is_admin ? 'inline-block' : 'none'
     }
@@ -880,41 +844,19 @@ _USER_APP_HTML = """<!doctype html>
       }
     }
 
-    async function sendSupport() {
-      const textEl = document.getElementById('supportText')
-      const btn = document.getElementById('supportBtn')
-      const text = textEl.value.trim()
-      if (!text) return
-
-      btn.disabled = true
-      try {
-        const res = await fetch(withAuth('/app/api/support'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify({ text }),
-        })
-        const data = await res.json()
-        if (!res.ok || !data.ok) throw new Error(data.detail || 'Не удалось отправить')
-        textEl.value = ''
-        document.getElementById('supportInfo').textContent = `Обращение отправлено: #${data.ticket_id}`
-      } catch (e) {
-        document.getElementById('supportInfo').textContent = String(e.message || e)
-      } finally {
-        btn.disabled = false
-      }
-    }
-
     document.getElementById('refreshBtn').addEventListener('click', loadStatus)
-    document.getElementById('getVpnBtn').addEventListener('click', () => {
-      if (primaryMode === 'open' && latestSubscriptionUrl) {
-        window.location.href = latestSubscriptionUrl
-        return
-      }
-      if (primaryMode === 'get') {
-        getVpn()
+    document.getElementById('getVpnBtn').addEventListener('click', getVpn)
+    document.getElementById('supportLinkBtn').addEventListener('click', () => {
+      const btn = document.getElementById('supportLinkBtn')
+      const username = btn.dataset.username || ''
+      if (!username) return
+      const url = `https://t.me/${username}`
+      if (tg && typeof tg.openTelegramLink === 'function') {
+        tg.openTelegramLink(url)
+      } else {
+        window.open(url, '_blank')
       }
     })
-    document.getElementById('supportBtn').addEventListener('click', sendSupport)
     document.getElementById('adminSwitchBtn').addEventListener('click', () => {
       if (!initData) return
       window.location.href = `/admin-app?init_data=${encodeURIComponent(initData)}`
@@ -923,9 +865,9 @@ _USER_APP_HTML = """<!doctype html>
       if (!latestSubscriptionUrl) return
       try {
         await navigator.clipboard.writeText(latestSubscriptionUrl)
-        document.getElementById('supportInfo').textContent = 'Ссылка скопирована'
+        document.getElementById('statusError').textContent = 'Ссылка скопирована'
       } catch (e) {
-        document.getElementById('supportInfo').textContent = latestSubscriptionUrl
+        document.getElementById('statusError').textContent = latestSubscriptionUrl
       }
     })
 
