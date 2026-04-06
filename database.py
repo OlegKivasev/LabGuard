@@ -51,6 +51,11 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     vpn_active      INTEGER DEFAULT 0,
     total_traffic   INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS trial_locks (
+    telegram_id INTEGER PRIMARY KEY,
+    used_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -149,11 +154,25 @@ class Database:
 
     def has_received_trial(self, telegram_id: int) -> bool:
         with self.connect() as conn:
+            locked = conn.execute(
+                "SELECT COUNT(*) FROM trial_locks WHERE telegram_id = ?",
+                (telegram_id,),
+            ).fetchone()[0]
+            if int(locked) > 0:
+                return True
+
             count = conn.execute(
                 "SELECT COUNT(*) FROM events WHERE telegram_id = ? AND event = 'get'",
                 (telegram_id,),
             ).fetchone()[0]
             return int(count) > 0
+
+    def mark_trial_used(self, telegram_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO trial_locks (telegram_id) VALUES (?)",
+                (telegram_id,),
+            )
 
     def set_marzban_binding(
         self,

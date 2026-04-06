@@ -106,6 +106,7 @@ async def cmd_get(
         marzban_id=str(marzban_user.get("username", marzban_username)),
         expires_at=expires_at,
     )
+    db.mark_trial_used(message.from_user.id)
     db.touch_last_active(message.from_user.id)
     db.log_event(message.from_user.id, "get")
 
