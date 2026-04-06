@@ -64,9 +64,10 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
     @app.get("/admin-app/api/overview")
     async def admin_overview(
         token: str = Query(""),
+        init_data: str = Query(""),
         x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
     ) -> dict:
-        _verify_admin(settings, token, x_tg_init_data)
+        _verify_admin(settings, token, x_tg_init_data or init_data)
         return db.get_admin_overview()
 
     @app.get("/admin-app/api/users")
@@ -74,9 +75,10 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         token: str = Query(""),
         limit: int = Query(30, ge=1, le=100),
         q: str = Query(""),
+        init_data: str = Query(""),
         x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
     ) -> dict:
-        _verify_admin(settings, token, x_tg_init_data)
+        _verify_admin(settings, token, x_tg_init_data or init_data)
         users = db.search_users(query=q, limit=limit)
         return {"users": users}
 
@@ -84,9 +86,10 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
     async def admin_deactivate(
         telegram_id: int,
         token: str = Query(""),
+        init_data: str = Query(""),
         x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
     ) -> dict:
-        _verify_admin(settings, token, x_tg_init_data)
+        _verify_admin(settings, token, x_tg_init_data or init_data)
 
         user = db.get_user_by_telegram_id(telegram_id)
         if user is None:
@@ -106,9 +109,10 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
     async def admin_delete(
         telegram_id: int,
         token: str = Query(""),
+        init_data: str = Query(""),
         x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
     ) -> dict:
-        _verify_admin(settings, token, x_tg_init_data)
+        _verify_admin(settings, token, x_tg_init_data or init_data)
 
         user = db.get_user_by_telegram_id(telegram_id)
         if user is None:
@@ -150,6 +154,7 @@ _ADMIN_APP_HTML = """<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LabGuard Admin</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { color-scheme: dark; }
     body { font-family: -apple-system, Segoe UI, sans-serif; margin: 0; background: #0f1420; color: #e7eefc; }
@@ -208,26 +213,30 @@ _ADMIN_APP_HTML = """<!doctype html>
     }
 
     async function loadOverview() {
-      const res = await fetch(`/admin-app/api/overview?token=${encodeURIComponent(token)}`, { headers: authHeaders() })
+      const initQ = initData ? `&init_data=${encodeURIComponent(initData)}` : ''
+      const res = await fetch(`/admin-app/api/overview?token=${encodeURIComponent(token)}${initQ}`, { headers: authHeaders() })
       if (!res.ok) throw new Error('overview failed')
       return res.json()
     }
 
     async function loadUsers(search) {
       const q = search ? `&q=${encodeURIComponent(search)}` : ''
-      const res = await fetch(`/admin-app/api/users?limit=50&token=${encodeURIComponent(token)}${q}`, { headers: authHeaders() })
+      const initQ = initData ? `&init_data=${encodeURIComponent(initData)}` : ''
+      const res = await fetch(`/admin-app/api/users?limit=50&token=${encodeURIComponent(token)}${q}${initQ}`, { headers: authHeaders() })
       if (!res.ok) throw new Error('users failed')
       return res.json()
     }
 
     async function deactivateUser(telegramId) {
-      const res = await fetch(`/admin-app/api/user/${telegramId}/deactivate?token=${encodeURIComponent(token)}`, { method: 'POST', headers: authHeaders() })
+      const initQ = initData ? `&init_data=${encodeURIComponent(initData)}` : ''
+      const res = await fetch(`/admin-app/api/user/${telegramId}/deactivate?token=${encodeURIComponent(token)}${initQ}`, { method: 'POST', headers: authHeaders() })
       if (!res.ok) throw new Error('deactivate failed')
       return res.json()
     }
 
     async function deleteUser(telegramId) {
-      const res = await fetch(`/admin-app/api/user/${telegramId}?token=${encodeURIComponent(token)}`, { method: 'DELETE', headers: authHeaders() })
+      const initQ = initData ? `&init_data=${encodeURIComponent(initData)}` : ''
+      const res = await fetch(`/admin-app/api/user/${telegramId}?token=${encodeURIComponent(token)}${initQ}`, { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error('delete failed')
       return res.json()
     }
