@@ -19,10 +19,10 @@ from .keyboards import (
     CB_STATUS,
     CB_SUPPORT,
     CB_SUPPORT_CANCEL,
-    main_menu_keyboard,
     subscription_confirm_keyboard,
     support_wait_keyboard,
 )
+from .menu_context import main_menu_for_user
 from .status import cmd_status
 
 router = Router(name="menu")
@@ -47,17 +47,19 @@ async def cmd_menu(message: Message, db: Database) -> None:
         db.touch_last_active(message.from_user.id)
 
     db.log_event(message.from_user.id, "menu")
-    await message.answer("Главное меню 👇", reply_markup=main_menu_keyboard())
+    await message.answer("Главное меню 👇", reply_markup=main_menu_for_user(existing))
 
 
 @router.callback_query(F.data == CB_BACK)
 async def cb_back(callback: CallbackQuery, db: Database) -> None:
+    user = None
     if callback.from_user:
         db.touch_last_active(callback.from_user.id)
         db.log_event(callback.from_user.id, "menu_back")
+        user = db.get_user_by_telegram_id(callback.from_user.id)
 
     if callback.message:
-        await callback.message.answer("Главное меню 👇", reply_markup=main_menu_keyboard())
+        await callback.message.answer("Главное меню 👇", reply_markup=main_menu_for_user(user))
     await callback.answer()
 
 
@@ -124,11 +126,12 @@ async def cb_support(callback: CallbackQuery, state: FSMContext, settings: Setti
         return
 
     if settings.support_bot_username:
+        user = db.get_user_by_telegram_id(callback.from_user.id) if callback.from_user else None
         await callback.message.answer(
             "Напиши в поддержку: "
             f"@{settings.support_bot_username}\n"
             "Если удобно, можно отправить вопрос прямо сюда через команду /support.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(user),
         )
         await callback.answer()
         return
@@ -144,11 +147,13 @@ async def cb_support(callback: CallbackQuery, state: FSMContext, settings: Setti
 @router.callback_query(F.data == CB_SUPPORT_CANCEL)
 async def cb_support_cancel(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     await state.clear()
+    user = None
     if callback.from_user:
         db.touch_last_active(callback.from_user.id)
         db.log_event(callback.from_user.id, "support_cancel")
+        user = db.get_user_by_telegram_id(callback.from_user.id)
     if callback.message:
-        await callback.message.answer("Диалог с поддержкой отменен.", reply_markup=main_menu_keyboard())
+        await callback.message.answer("Диалог с поддержкой отменен.", reply_markup=main_menu_for_user(user))
     await callback.answer()
 
 
@@ -169,7 +174,7 @@ async def support_waiting_text(message: Message, state: FSMContext, db: Database
 
     await message.answer(
         f"Обращение принято: #{ticket_id}. Ответим в течение 24 часов.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_for_user(db.get_user_by_telegram_id(message.from_user.id)),
     )
 
 
@@ -192,4 +197,4 @@ async def auto_menu_on_text(message: Message, db: Database) -> None:
         db.touch_last_active(message.from_user.id)
 
     db.log_event(message.from_user.id, "menu_auto")
-    await message.answer("С возвращением! Вот меню 👇", reply_markup=main_menu_keyboard())
+    await message.answer("С возвращением! Вот меню 👇", reply_markup=main_menu_for_user(existing))

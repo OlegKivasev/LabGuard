@@ -11,20 +11,26 @@ CB_BACK = "menu:back"
 CB_SUPPORT_CANCEL = "menu:support_cancel"
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Получить VPN", callback_data=CB_GET_INFO)],
-            [
-                InlineKeyboardButton(text="Мой статус", callback_data=CB_STATUS),
-                InlineKeyboardButton(text="Как подключить", callback_data=CB_HELP),
-            ],
-            [
-                InlineKeyboardButton(text="Приложения", callback_data=CB_APPS),
-                InlineKeyboardButton(text="Поддержка", callback_data=CB_SUPPORT),
-            ],
+def main_menu_keyboard(show_get_vpn: bool = True, show_status: bool = True) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if show_get_vpn:
+        rows.append([InlineKeyboardButton(text="Получить VPN", callback_data=CB_GET_INFO)])
+
+    second_row: list[InlineKeyboardButton] = []
+    if show_status:
+        second_row.append(InlineKeyboardButton(text="Мой статус", callback_data=CB_STATUS))
+    second_row.append(InlineKeyboardButton(text="Как подключить", callback_data=CB_HELP))
+    rows.append(second_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(text="Приложения", callback_data=CB_APPS),
+            InlineKeyboardButton(text="Поддержка", callback_data=CB_SUPPORT),
         ]
     )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def subscription_confirm_keyboard() -> InlineKeyboardMarkup:

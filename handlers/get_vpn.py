@@ -8,7 +8,8 @@ from aiogram.types import Message
 from config import Settings
 from database import Database
 from marzban import MarzbanClient
-from .keyboards import main_menu_keyboard, post_subscription_keyboard
+from .keyboards import post_subscription_keyboard
+from .menu_context import main_menu_for_user
 
 router = Router(name="get_vpn")
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ async def cmd_get(
         await message.answer(
             "Пробный период уже был использован и повторно не выдается.\n"
             "Ниже меню, проверь статус или напиши в поддержку.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
 
@@ -92,11 +93,13 @@ async def cmd_get(
         telegram_id=message.from_user.id,
         username=message.from_user.username,
     )
+    if existing is None:
+        existing = db.get_user_by_telegram_id(message.from_user.id)
 
     if not marzban.is_configured:
         await message.answer(
             "Marzban API пока не настроен. Заполни настройки API и попробуй снова.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
 
@@ -115,19 +118,19 @@ async def cmd_get(
             await message.answer(
                 "На сервере не найден активный VLESS inbound. "
                 "Включи VLESS inbound в Marzban и попробуй снова.",
-                reply_markup=main_menu_keyboard(),
+                reply_markup=main_menu_for_user(existing),
             )
             return
         await message.answer(
             "Ошибка Marzban API. Проверь настройки сервера и попробуй снова через кнопку меню.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
     except Exception as exc:
         logger.exception("Failed to create Marzban user for telegram_id=%s: %s", message.from_user.id, exc)
         await message.answer(
             "Не удалось создать подписку. Попробуй позже или напиши в поддержку.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
 
@@ -150,7 +153,7 @@ async def cmd_get(
     if not config_text:
         await message.answer(
             "Подписка активирована, но ссылка пока недоступна. Напиши в поддержку.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
 

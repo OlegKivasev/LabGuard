@@ -5,7 +5,7 @@ from aiogram.types import Message
 
 from config import Settings
 from database import Database
-from .keyboards import main_menu_keyboard
+from .menu_context import main_menu_for_user
 
 router = Router(name="support")
 
@@ -31,7 +31,7 @@ async def cmd_support(message: Message, command: CommandObject, db: Database, se
         ticket_id = db.create_ticket(message.from_user.id, text)
         await message.answer(
             f"Обращение принято: #{ticket_id}. Ответим в течение 24 часов.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
 
@@ -40,11 +40,11 @@ async def cmd_support(message: Message, command: CommandObject, db: Database, se
             "Напиши в поддержку: "
             f"@{settings.support_bot_username}\n"
             "Или отправь сообщение сразу сюда командой /support Твой текст",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
         return
 
     await message.answer(
         "Чтобы создать обращение без команды, открой кнопку «Поддержка» в меню.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_for_user(existing),
     )

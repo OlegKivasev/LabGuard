@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from database import Database
-from .keyboards import main_menu_keyboard
+from .menu_context import main_menu_for_user
 
 router = Router(name="status")
 
@@ -23,7 +23,7 @@ async def cmd_status(message: Message, db: Database) -> None:
     if user is None:
         await message.answer(
             "Тебя еще нет в системе. Нажми кнопку «Получить VPN» в меню.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(user),
         )
         return
 
@@ -34,7 +34,7 @@ async def cmd_status(message: Message, db: Database) -> None:
     if not expires_raw:
         await message.answer(
             "Подписка не активирована или пробный период завершен.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(user),
         )
         return
 
@@ -49,5 +49,5 @@ async def cmd_status(message: Message, db: Database) -> None:
         f"{status_mark}\n"
         f"📅 Осталось: {remaining_days} дней\n"
         f"⏳ До: {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_for_user(user),
     )

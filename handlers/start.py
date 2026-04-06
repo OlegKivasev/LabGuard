@@ -4,7 +4,7 @@ from aiogram.types import Message
 
 from config import Settings
 from database import Database
-from .keyboards import main_menu_keyboard
+from .menu_context import main_menu_for_user
 
 router = Router(name="start")
 
@@ -30,12 +30,12 @@ async def cmd_start(message: Message, db: Database, settings: Settings) -> None:
             "Привет! Мы не берем деньги за этот доступ и не собираем логи твоего интернет-трафика.\n"
             "Сейчас это бесплатный инструмент, чтобы понять, насколько VPN востребован и перегружен в реальных условиях.\n\n"
             "Ниже главное меню, начни с кнопки «Получить VPN».",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
     else:
         await message.answer(
             "С возвращением! Отправляю главное меню.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_for_user(existing),
         )
 
     _ = settings
