@@ -104,6 +104,18 @@ class Database:
                 (telegram_id, event),
             )
 
+    def set_marzban_binding(
+        self,
+        telegram_id: int,
+        marzban_id: str,
+        expires_at: str,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE users SET marzban_id = ?, expires_at = ? WHERE telegram_id = ?",
+                (marzban_id, expires_at, telegram_id),
+            )
+
     def ensure_trial(self, telegram_id: int, days: int = 14) -> str:
         with self.connect() as conn:
             row = conn.execute(

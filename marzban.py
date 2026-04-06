@@ -64,7 +64,12 @@ class MarzbanClient:
         token = await self._get_bearer_token()
         return {"Authorization": f"Bearer {token}"}
 
-    async def _request_with_fallback(self, method: str, path: str) -> httpx.Response:
+    async def _request_with_fallback(
+        self,
+        method: str,
+        path: str,
+        json: dict[str, Any] | None = None,
+    ) -> httpx.Response:
         if not self.is_configured:
             raise RuntimeError("Marzban client is not configured")
 
@@ -76,6 +81,7 @@ class MarzbanClient:
                     method,
                     url,
                     headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=json,
                 )
                 if response.status_code != 401:
                     return response
@@ -86,6 +92,7 @@ class MarzbanClient:
                     method,
                     url,
                     headers={"Authorization": f"Bearer {token}"},
+                    json=json,
                 )
                 return response
 
@@ -102,5 +109,29 @@ class MarzbanClient:
         response = await self._request_with_fallback("GET", f"/api/user/{username}")
         if response.status_code == 404:
             return None
+        response.raise_for_status()
+        return response.json()
+
+    async def create_user(
+        self,
+        username: str,
+        expire_at: datetime,
+    ) -> dict[str, Any]:
+        expire_utc = expire_at if expire_at.tzinfo else expire_at.replace(tzinfo=timezone.utc)
+        expire_ts = int(expire_utc.timestamp())
+        payload = {
+            "username": username,
+            "proxies": {"vless": {}},
+            "expire": expire_ts,
+            "data_limit": 0,
+            "data_limit_reset_strategy": "no_reset",
+            "note": "created_by_telegram_bot",
+        }
+        response = await self._request_with_fallback("POST", "/api/user", json=payload)
+        if response.status_code == 409:
+            existing = await self.get_user(username)
+            if existing is None:
+                raise RuntimeError("Marzban returned 409 but user was not found")
+            return existing
         response.raise_for_status()
         return response.json()
