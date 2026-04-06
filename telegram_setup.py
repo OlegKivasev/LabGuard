@@ -1,5 +1,5 @@
 from aiogram import Bot
-from aiogram.types import BotCommand, MenuButtonCommands
+from aiogram.types import BotCommand, BotCommandScopeChat, MenuButtonCommands
 
 from config import Settings
 
@@ -7,6 +7,11 @@ from config import Settings
 BOT_COMMANDS = [
     BotCommand(command="start", description="Открыть бота"),
     BotCommand(command="support", description="Написать в поддержку"),
+]
+
+ADMIN_BOT_COMMANDS = [
+    *BOT_COMMANDS,
+    BotCommand(command="admin_app", description="Открыть админ мини-приложение"),
 ]
 
 BOT_SHORT_DESCRIPTION = (
@@ -36,4 +41,8 @@ async def setup_bot(bot: Bot, settings: Settings) -> None:
 
     await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
 
-    _ = settings
+    for admin_id in settings.admin_telegram_ids:
+        await bot.set_my_commands(
+            ADMIN_BOT_COMMANDS,
+            scope=BotCommandScopeChat(chat_id=admin_id),
+        )
