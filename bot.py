@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from config import load_settings
 from database import Database
 from handlers import register_routers
+from marzban import MarzbanClient
 from scheduler import build_scheduler, send_expiry_notifications
 from telegram_setup import setup_bot
 
@@ -42,6 +43,32 @@ async def check_telegram_connection() -> int:
         return 1
     finally:
         await bot.session.close()
+
+
+async def check_marzban_connection() -> int:
+    settings = load_settings()
+    missing = settings.missing_for_marzban()
+
+    if missing:
+        print("Marzban check failed. Missing:", ", ".join(missing))
+        return 1
+
+    client = MarzbanClient(
+        base_url=settings.marzban_base_url,
+        api_key=settings.marzban_api_key,
+    )
+
+    try:
+        ok = await client.healthcheck()
+        if ok:
+            print("Marzban check passed.")
+            return 0
+
+        print("Marzban check failed: unauthorized or endpoint unavailable.")
+        return 1
+    except Exception as exc:
+        print(f"Marzban check failed: {exc}")
+        return 1
 
 
 async def main() -> None:
@@ -89,6 +116,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Validate Telegram token and connectivity",
     )
+    parser.add_argument(
+        "--check-marzban",
+        action="store_true",
+        help="Validate Marzban API settings and connectivity",
+    )
     args = parser.parse_args()
 
     if args.check_config:
@@ -96,6 +128,9 @@ if __name__ == "__main__":
 
     if args.check_telegram:
         raise SystemExit(asyncio.run(check_telegram_connection()))
+
+    if args.check_marzban:
+        raise SystemExit(asyncio.run(check_marzban_connection()))
 
     logging.basicConfig(level=logging.INFO)
     try:

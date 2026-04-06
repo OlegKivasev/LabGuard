@@ -21,6 +21,17 @@ class Settings:
 
         return missing
 
+    def missing_for_marzban(self) -> list[str]:
+        missing: list[str] = []
+
+        if not self.marzban_base_url:
+            missing.append("MARZBAN_BASE_URL")
+
+        if not self.marzban_api_key:
+            missing.append("MARZBAN_API_KEY")
+
+        return missing
+
 
 def load_settings() -> Settings:
     load_dotenv()
