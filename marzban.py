@@ -112,6 +112,14 @@ class MarzbanClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_inbounds(self) -> dict[str, list[dict[str, Any]]]:
+        response = await self._request_with_fallback("GET", "/api/inbounds")
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
     async def create_user(
         self,
         username: str,
@@ -119,9 +127,27 @@ class MarzbanClient:
     ) -> dict[str, Any]:
         expire_utc = expire_at if expire_at.tzinfo else expire_at.replace(tzinfo=timezone.utc)
         expire_ts = int(expire_utc.timestamp())
+
+        inbounds_payload = await self.get_inbounds()
+        protocol_priority = ("vless", "vmess", "trojan", "shadowsocks")
+        selected_protocol = ""
+        selected_tags: list[str] = []
+
+        for protocol in protocol_priority:
+            tags = [str(item.get("tag", "")).strip() for item in inbounds_payload.get(protocol, [])]
+            tags = [tag for tag in tags if tag]
+            if tags:
+                selected_protocol = protocol
+                selected_tags = tags
+                break
+
+        if not selected_protocol:
+            raise RuntimeError("No enabled inbounds found in Marzban")
+
         payload = {
             "username": username,
-            "proxies": {"vless": {}},
+            "proxies": {selected_protocol: {}},
+            "inbounds": {selected_protocol: selected_tags},
             "expire": expire_ts,
             "data_limit": 0,
             "data_limit_reset_strategy": "no_reset",
@@ -133,5 +159,6 @@ class MarzbanClient:
             if existing is None:
                 raise RuntimeError("Marzban returned 409 but user was not found")
             return existing
-        response.raise_for_status()
+        if response.status_code >= 400:
+            raise RuntimeError(f"Marzban create user failed: {response.status_code} {response.text}")
         return response.json()

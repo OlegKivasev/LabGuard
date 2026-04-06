@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -9,6 +10,7 @@ from database import Database
 from marzban import MarzbanClient
 
 router = Router(name="get_vpn")
+logger = logging.getLogger(__name__)
 
 
 @router.message(Command("get"))
@@ -39,7 +41,8 @@ async def cmd_get(
             username=marzban_username,
             expire_at=expiry_dt,
         )
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to create Marzban user for telegram_id=%s: %s", message.from_user.id, exc)
         await message.answer("Не удалось создать VPN-конфиг. Попробуй позже или напиши /support")
         return
 
