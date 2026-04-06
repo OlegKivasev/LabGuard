@@ -4,6 +4,7 @@ from aiogram.types import Message
 
 from config import Settings
 from database import Database
+from .keyboards import post_subscription_keyboard
 from .menu_context import main_menu_for_user
 
 router = Router(name="start")
@@ -34,6 +35,9 @@ async def cmd_start(message: Message, db: Database, settings: Settings) -> None:
             reply_markup=main_menu_for_user(existing),
         )
     else:
-        await message.answer("С возвращением! Проверь «Мой статус».")
+        await message.answer(
+            "С возвращением! Проверь «Мой статус».",
+            reply_markup=post_subscription_keyboard(),
+        )
 
     _ = settings
