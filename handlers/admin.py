@@ -14,12 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 def _is_admin(message: Message, settings: Settings) -> bool:
-    return bool(message.from_user and message.from_user.id in settings.admin_telegram_ids)
+    if not message.from_user:
+        return False
+
+    by_id = message.from_user.id in settings.admin_telegram_ids
+    username = (message.from_user.username or "").lower()
+    by_username = bool(username and username in settings.admin_telegram_usernames)
+    return by_id or by_username
 
 
 @router.message(Command("admin_users"))
 async def cmd_admin_users(message: Message, command: CommandObject, db: Database, settings: Settings) -> None:
     if not _is_admin(message, settings):
+        await message.answer("Нет доступа к admin-командам.")
         return
 
     raw_limit = (command.args or "").strip()
@@ -50,6 +57,7 @@ async def cmd_admin_deactivate(
     marzban: MarzbanClient,
 ) -> None:
     if not _is_admin(message, settings):
+        await message.answer("Нет доступа к admin-командам.")
         return
 
     args = (command.args or "").strip()
@@ -86,6 +94,7 @@ async def cmd_admin_delete(
     marzban: MarzbanClient,
 ) -> None:
     if not _is_admin(message, settings):
+        await message.answer("Нет доступа к admin-командам.")
         return
 
     args = (command.args or "").strip()

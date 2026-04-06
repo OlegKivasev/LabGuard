@@ -45,3 +45,5 @@ Admin commands (IDs from `ADMIN_TELEGRAM_IDS`):
 - `/admin_users [limit]`
 - `/admin_deactivate <telegram_id>`
 - `/admin_delete <telegram_id>`
+
+`ADMIN_TELEGRAM_IDS` accepts Telegram numeric IDs and/or usernames (e.g. `123456789,@myuser`).

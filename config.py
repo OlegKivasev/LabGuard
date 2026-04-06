@@ -16,6 +16,7 @@ class Settings:
     free_trial_days: int
     support_bot_username: str
     admin_telegram_ids: set[int]
+    admin_telegram_usernames: set[str]
 
     def missing_for_bot_start(self) -> list[str]:
         missing: list[str] = []
@@ -47,6 +48,7 @@ def load_settings() -> Settings:
 
     admin_ids_raw = os.getenv("ADMIN_TELEGRAM_IDS", "").strip()
     admin_ids: set[int] = set()
+    admin_usernames: set[str] = set()
     if admin_ids_raw:
         for part in admin_ids_raw.split(","):
             value = part.strip()
@@ -54,6 +56,8 @@ def load_settings() -> Settings:
                 continue
             if value.isdigit():
                 admin_ids.add(int(value))
+            else:
+                admin_usernames.add(value.lstrip("@").lower())
 
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", "").strip(),
@@ -66,4 +70,5 @@ def load_settings() -> Settings:
         free_trial_days=int(os.getenv("FREE_TRIAL_DAYS", "14")),
         support_bot_username=os.getenv("SUPPORT_BOT_USERNAME", "").strip(),
         admin_telegram_ids=admin_ids,
+        admin_telegram_usernames=admin_usernames,
     )
