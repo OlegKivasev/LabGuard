@@ -38,3 +38,5 @@ On startup, the bot creates SQLite tables automatically if they do not exist.
 6. In Telegram test commands in order: `/start`, `/get`, `/status`, `/help`, `/apps`, `/support test`.
 
 On startup bot registers command menu in Telegram automatically.
+
+If Marzban uses a self-signed certificate, set `MARZBAN_VERIFY_TLS=false` temporarily.
