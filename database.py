@@ -158,19 +158,19 @@ class Database:
                 "SELECT COUNT(*) FROM trial_locks WHERE telegram_id = ?",
                 (telegram_id,),
             ).fetchone()[0]
-            if int(locked) > 0:
-                return True
-
-            count = conn.execute(
-                "SELECT COUNT(*) FROM events WHERE telegram_id = ? AND event = 'get'",
-                (telegram_id,),
-            ).fetchone()[0]
-            return int(count) > 0
+            return int(locked) > 0
 
     def mark_trial_used(self, telegram_id: int) -> None:
         with self.connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO trial_locks (telegram_id) VALUES (?)",
+                (telegram_id,),
+            )
+
+    def clear_trial_lock(self, telegram_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM trial_locks WHERE telegram_id = ?",
                 (telegram_id,),
             )
 

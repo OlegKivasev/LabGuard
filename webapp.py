@@ -166,7 +166,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
                 marzban_changed = True
                 break
 
-        db.mark_trial_used(telegram_id)
+        db.clear_trial_lock(telegram_id)
         db.delete_user(telegram_id)
         db.log_event(telegram_id, "admin_delete_webapp")
         return {"ok": True, "marzban_changed": marzban_changed}
