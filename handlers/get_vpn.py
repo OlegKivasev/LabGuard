@@ -19,6 +19,10 @@ def _build_marzban_username(message: Message) -> str:
     return f"tg_{message.from_user.id}"
 
 
+def _parse_sqlite_dt(value: str) -> datetime:
+    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+
+
 @router.message(Command("get"))
 async def cmd_get(
     message: Message,
@@ -33,6 +37,26 @@ async def cmd_get(
         telegram_id=message.from_user.id,
         username=message.from_user.username,
     )
+
+    existing = db.get_user_by_telegram_id(message.from_user.id)
+    if existing and existing.get("expires_at"):
+        try:
+            expires_at = _parse_sqlite_dt(str(existing["expires_at"]))
+            now = datetime.now(timezone.utc)
+            if expires_at > now:
+                remaining_days = max(0, (expires_at - now).days)
+                db.touch_last_active(message.from_user.id)
+                db.log_event(message.from_user.id, "get_existing")
+                await message.answer(
+                    "Твой триал уже активирован.\n"
+                    f"📅 Осталось: {remaining_days} дней\n"
+                    f"⏳ До: {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                    "Проверь текущий статус командой /status"
+                )
+                return
+        except Exception:
+            logger.exception("Failed to parse local expires_at for telegram_id=%s", message.from_user.id)
+
     if not marzban.is_configured:
         await message.answer(
             "Marzban API пока не настроен. Заполни настройки API и попробуй снова."

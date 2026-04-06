@@ -150,22 +150,6 @@ class MarzbanClient:
         }
         response = await self._request_with_fallback("POST", "/api/user", json=payload)
         if response.status_code == 409:
-            update_payload = {
-                "proxies": {"vless": {}},
-                "inbounds": {"vless": vless_tags},
-                "expire": expire_ts,
-                "data_limit": 0,
-                "data_limit_reset_strategy": "no_reset",
-            }
-            update_response = await self._request_with_fallback(
-                "PUT",
-                f"/api/user/{username}",
-                json=update_payload,
-            )
-            if update_response.status_code >= 400:
-                raise RuntimeError(
-                    f"Marzban update user failed: {update_response.status_code} {update_response.text}"
-                )
             existing = await self.get_user(username)
             if existing is None:
                 raise RuntimeError("Marzban returned 409 but user was not found")
