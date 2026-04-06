@@ -422,6 +422,7 @@ _ADMIN_APP_HTML = """<!doctype html>
     body { font-family: -apple-system, Segoe UI, sans-serif; margin: 0; background: #0f1420; color: #e7eefc; }
     .wrap { max-width: 1024px; margin: 0 auto; padding: 14px; }
     .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .head-actions { display: flex; gap: 8px; }
     .title { margin: 0; font-size: 36px; }
     .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
     .tab { background: #1b2334; border: 1px solid #2a3550; color: #e7eefc; border-radius: 999px; padding: 8px 12px; cursor: pointer; }
@@ -451,7 +452,10 @@ _ADMIN_APP_HTML = """<!doctype html>
   <div class="wrap">
     <div class="head">
       <h1 class="title">LabGuard Admin</h1>
-      <button id="refreshBtn">Обновить</button>
+      <div class="head-actions">
+        <button id="backToUserBtn" style="display:none">В пользовательское приложение</button>
+        <button id="refreshBtn">Обновить</button>
+      </div>
     </div>
 
     <div class="tabs">
@@ -513,6 +517,15 @@ _ADMIN_APP_HTML = """<!doctype html>
       return `${url}${sep}token=${encodeURIComponent(token)}${initQ}`
     }
     function fmt(v) { return v === null || v === undefined ? '—' : v }
+
+    function setupBackToUserButton() {
+      const btn = document.getElementById('backToUserBtn')
+      if (!initData) return
+      btn.style.display = 'inline-block'
+      btn.addEventListener('click', () => {
+        window.location.href = `/app?init_data=${encodeURIComponent(initData)}`
+      })
+    }
 
     async function loadMetrics() {
       const res = await fetch(withAuth('/admin-app/api/metrics'), { headers: authHeaders() })
@@ -655,6 +668,7 @@ _ADMIN_APP_HTML = """<!doctype html>
       if (e.key === 'Enter') { e.preventDefault(); refreshUsers() }
     })
 
+    setupBackToUserButton()
     refreshAll()
   </script>
 </body>
