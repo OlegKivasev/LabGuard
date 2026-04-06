@@ -28,7 +28,7 @@ async def cmd_status(message: Message, db: Database) -> None:
 
     expires_raw = user.get("expires_at")
     if not expires_raw:
-        await message.answer("VPN еще не активирован. Нажми /get")
+        await message.answer("VPN не активирован или пробный период завершен.")
         return
 
     expires_at = _parse_sqlite_dt(str(expires_raw))
@@ -41,6 +41,5 @@ async def cmd_status(message: Message, db: Database) -> None:
         "📊 Твой статус:\n"
         f"{status_mark}\n"
         f"📅 Осталось: {remaining_days} дней\n"
-        f"⏳ До: {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-        "📡 Трафик: будет доступен после подключения API"
+        f"⏳ До: {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )

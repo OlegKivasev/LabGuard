@@ -147,6 +147,14 @@ class Database:
                 (telegram_id, event),
             )
 
+    def has_received_trial(self, telegram_id: int) -> bool:
+        with self.connect() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM events WHERE telegram_id = ? AND event = 'get'",
+                (telegram_id,),
+            ).fetchone()[0]
+            return int(count) > 0
+
     def set_marzban_binding(
         self,
         telegram_id: int,

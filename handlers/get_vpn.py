@@ -57,6 +57,15 @@ async def cmd_get(
         except Exception:
             logger.exception("Failed to parse local expires_at for telegram_id=%s", message.from_user.id)
 
+    if db.has_received_trial(message.from_user.id):
+        db.touch_last_active(message.from_user.id)
+        db.log_event(message.from_user.id, "get_denied_finished")
+        await message.answer(
+            "Пробный период уже был использован и повторно не выдается.\n"
+            "Проверь текущий статус командой /status"
+        )
+        return
+
     if not marzban.is_configured:
         await message.answer(
             "Marzban API пока не настроен. Заполни настройки API и попробуй снова."
