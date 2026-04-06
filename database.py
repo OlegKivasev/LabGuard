@@ -1,6 +1,7 @@
 from pathlib import Path
 import sqlite3
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 
@@ -300,4 +301,137 @@ class Database:
             "start_today": start_today,
             "get_today": get_today,
             "open_tickets": open_tickets,
+        }
+
+    def get_local_metrics_snapshot(self) -> dict[str, Any]:
+        with self.connect() as conn:
+            total_users = int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+            start_total = int(conn.execute("SELECT COUNT(*) FROM events WHERE event='start'").fetchone()[0])
+            get_total = int(conn.execute("SELECT COUNT(*) FROM events WHERE event='get'").fetchone()[0])
+
+            users_3d_total = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE datetime(created_at) <= datetime('now', '-3 days')
+                    """
+                ).fetchone()[0]
+            )
+            users_7d_total = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE datetime(created_at) <= datetime('now', '-7 days')
+                    """
+                ).fetchone()[0]
+            )
+            users_14d_total = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE datetime(created_at) <= datetime('now', '-14 days')
+                    """
+                ).fetchone()[0]
+            )
+
+            active_3d = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE datetime(created_at) <= datetime('now', '-3 days')
+                      AND last_active IS NOT NULL
+                      AND datetime(last_active) >= datetime(created_at, '+3 days')
+                    """
+                ).fetchone()[0]
+            )
+            active_7d = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE datetime(created_at) <= datetime('now', '-7 days')
+                      AND last_active IS NOT NULL
+                      AND datetime(last_active) >= datetime(created_at, '+7 days')
+                    """
+                ).fetchone()[0]
+            )
+            active_14d = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE datetime(created_at) <= datetime('now', '-14 days')
+                      AND last_active IS NOT NULL
+                      AND datetime(last_active) >= datetime(created_at, '+14 days')
+                    """
+                ).fetchone()[0]
+            )
+
+            users_active_today = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM users WHERE date(last_active) = date('now')"
+                ).fetchone()[0]
+            )
+            new_tickets_today = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM tickets WHERE date(created_at) = date('now')"
+                ).fetchone()[0]
+            )
+            total_tickets = int(conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0])
+            closed_tickets = int(conn.execute("SELECT COUNT(*) FROM tickets WHERE status='closed'").fetchone()[0])
+            total_messages = int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
+            open_tickets = int(conn.execute("SELECT COUNT(*) FROM tickets WHERE status='open'").fetchone()[0])
+
+            user_msgs_rows = conn.execute(
+                "SELECT text FROM messages WHERE sender='user' AND text IS NOT NULL"
+            ).fetchall()
+
+        def pct(numerator: int, denominator: int) -> float:
+            if denominator <= 0:
+                return 0.0
+            return round((numerator / denominator) * 100, 2)
+
+        keyword_buckets = {
+            "не подключается": [r"не\s*подключ", r"не\s*работ"],
+            "медленно": [r"медлен", r"тормоз"],
+            "ошибка": [r"ошиб"],
+            "ios/iphone": [r"iphone", r"ios"],
+            "android": [r"android"],
+        }
+        keyword_counts: dict[str, int] = {k: 0 for k in keyword_buckets}
+        for row in user_msgs_rows:
+            text = str(row["text"] or "").lower()
+            for key, patterns in keyword_buckets.items():
+                if any(re.search(pattern, text) for pattern in patterns):
+                    keyword_counts[key] += 1
+
+        avg_messages_per_ticket = round(total_messages / total_tickets, 2) if total_tickets else 0.0
+
+        return {
+            "funnel": {
+                "start_total": start_total,
+                "get_total": get_total,
+                "start_to_get_pct": pct(get_total, start_total),
+            },
+            "retention": {
+                "active_3d_pct": pct(active_3d, users_3d_total),
+                "active_7d_pct": pct(active_7d, users_7d_total),
+                "active_14d_pct": pct(active_14d, users_14d_total),
+            },
+            "support": {
+                "new_tickets_today": new_tickets_today,
+                "ticket_rate_from_active_pct": pct(new_tickets_today, users_active_today),
+                "avg_messages_per_ticket": avg_messages_per_ticket,
+                "closed_tickets_pct": pct(closed_tickets, total_tickets),
+                "open_tickets": open_tickets,
+                "top_keywords": keyword_counts,
+            },
+            "users": {
+                "total_users": total_users,
+                "active_today": users_active_today,
+            },
         }

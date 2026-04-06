@@ -54,3 +54,7 @@ Mini App settings:
 - `WEB_APP_HOST` (default `0.0.0.0`)
 - `WEB_APP_PORT` (default `8081`)
 - `WEB_APP_TOKEN_TTL_MINUTES` (default `30`)
+
+Mini App sections:
+- `Метрика`: funnel, retention, traffic, support quality, infrastructure
+- `Пользователи`: search, deactivate trial, delete user

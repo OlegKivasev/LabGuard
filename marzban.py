@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import statistics
 from typing import Any
 
 import httpx
@@ -187,3 +188,45 @@ class MarzbanClient:
             return False
         response.raise_for_status()
         return True
+
+    async def get_users_usage_snapshot(self, limit: int = 2000) -> dict[str, Any]:
+        response = await self._request_with_fallback("GET", f"/api/users?limit={limit}")
+        response.raise_for_status()
+        payload = response.json()
+        users = payload.get("users", []) if isinstance(payload, dict) else []
+
+        used_traffic_values = [int(u.get("used_traffic", 0) or 0) for u in users]
+        connected_users = sum(1 for v in used_traffic_values if v > 0)
+        active_users = sum(1 for u in users if str(u.get("status", "")) == "active")
+        total_traffic_bytes = sum(used_traffic_values)
+
+        avg_traffic = (total_traffic_bytes / len(used_traffic_values)) if used_traffic_values else 0.0
+        median_traffic = statistics.median(used_traffic_values) if used_traffic_values else 0.0
+        heavy_users = sum(1 for v in used_traffic_values if v >= 5 * 1024 * 1024 * 1024)
+
+        return {
+            "total_users": len(users),
+            "connected_users": connected_users,
+            "active_users": active_users,
+            "total_traffic_gb": round(total_traffic_bytes / (1024 ** 3), 2),
+            "avg_traffic_gb": round(avg_traffic / (1024 ** 3), 2),
+            "median_traffic_gb": round(median_traffic / (1024 ** 3), 2),
+            "heavy_users_5gb": heavy_users,
+        }
+
+    async def get_system_snapshot(self) -> dict[str, Any]:
+        response = await self._request_with_fallback("GET", "/api/system")
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return {}
+
+        mem_total = int(payload.get("mem_total", 0) or 0)
+        mem_used = int(payload.get("mem_used", 0) or 0)
+        ram_pct = round((mem_used / mem_total) * 100, 2) if mem_total else 0.0
+        return {
+            "cpu_pct": round(float(payload.get("cpu_usage", 0) or 0), 2),
+            "ram_pct": ram_pct,
+            "online_users": int(payload.get("online_users", 0) or 0),
+            "version": str(payload.get("version", "")),
+        }
