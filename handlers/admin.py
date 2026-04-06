@@ -119,6 +119,7 @@ async def cmd_admin_deactivate(
             return
 
     db.clear_trial(telegram_id)
+    db.mark_trial_used(telegram_id)
     db.log_event(telegram_id, "admin_deactivate")
     if disabled:
         await message.answer(f"Триал деактивирован для telegram_id={telegram_id}.")
@@ -163,6 +164,7 @@ async def cmd_admin_delete(
             await message.answer("Не удалось удалить пользователя в Marzban.")
             return
 
+    db.mark_trial_used(telegram_id)
     deleted = db.delete_user(telegram_id)
     if deleted:
         db.log_event(telegram_id, "admin_delete")

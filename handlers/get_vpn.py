@@ -45,6 +45,7 @@ async def cmd_get(
             now = datetime.now(timezone.utc)
             if expires_at > now:
                 remaining_days = max(0, (expires_at - now).days)
+                db.mark_trial_used(message.from_user.id)
                 db.touch_last_active(message.from_user.id)
                 db.log_event(message.from_user.id, "get_existing")
                 await message.answer(
