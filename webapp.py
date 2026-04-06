@@ -245,6 +245,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         remaining_days = 0
         subscription_url = ""
         is_subscription = False
+        used_traffic_bytes = 0
         if expires_raw:
             dt = _parse_sqlite_dt(str(expires_raw))
             now = datetime.now(timezone.utc)
@@ -252,7 +253,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
             remaining_days = max(0, (dt - now).days)
             expires_at = dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        if user:
+        if user and is_active:
             for candidate in _candidate_marzban_usernames(user, telegram_id):
                 try:
                     marzban_user = await marzban.get_user(candidate)
@@ -262,6 +263,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
                     subscription_url, is_subscription = _extract_subscription_text(marzban_user)
                     if is_subscription:
                         subscription_url = _normalize_subscription_url(subscription_url, marzban.base_url)
+                    used_traffic_bytes = int(marzban_user.get("used_traffic", 0) or 0)
                     break
 
         return {
@@ -274,6 +276,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
             "is_admin": _is_admin_allowed(settings, telegram_id, username),
             "subscription_url": subscription_url,
             "is_subscription": is_subscription,
+            "consumed_traffic_gb": round(used_traffic_bytes / (1024 ** 3), 2),
         }
 
     @app.post("/app/api/get-vpn")
@@ -692,13 +695,25 @@ _USER_APP_HTML = """<!doctype html>
     button.secondary { background: #334155; }
     button:disabled { opacity: .6; cursor: default; }
     .sub-link {
-      margin-top: 8px;
       font-size: 13px;
       word-break: break-all;
       padding: 8px;
       border-radius: 10px;
       background: #0f172a;
       border: 1px solid #334155;
+      flex: 1;
+      min-width: 0;
+    }
+    .sub-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .icon-btn {
+      width: 38px;
+      min-width: 38px;
+      height: 38px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
     }
     .alert { margin-top: 8px; font-size: 13px; color: #fca5a5; }
     .ok { color: #93c5fd; }
@@ -723,9 +738,9 @@ _USER_APP_HTML = """<!doctype html>
         <button id="getVpnBtn">Получить VPN</button>
         <button id="refreshBtn" class="secondary" style="display:none">Обновить статус</button>
       </div>
-      <div id="subLink" class="sub-link" style="display:none"></div>
-      <div class="row" style="margin-top: 8px;">
-        <button id="copyBtn" class="secondary" style="display:none">Скопировать ссылку</button>
+      <div id="subWrap" class="sub-row" style="display:none">
+        <div id="subLink" class="sub-link"></div>
+        <button id="copyBtn" class="secondary icon-btn" style="display:none" aria-label="Скопировать">&#128203;</button>
       </div>
     </div>
 
@@ -751,6 +766,13 @@ _USER_APP_HTML = """<!doctype html>
 
     let latestSubscriptionUrl = ''
 
+    function formatTraffic(gbValue) {
+      const gb = Number(gbValue || 0)
+      if (!Number.isFinite(gb) || gb <= 0) return '0 MB'
+      if (gb >= 1) return `${gb.toFixed(2)} GB`
+      return `${Math.round(gb * 1024)} MB`
+    }
+
     function renderStatus(data) {
       const statusText = document.getElementById('statusText')
       const statusMeta = document.getElementById('statusMeta')
@@ -763,15 +785,15 @@ _USER_APP_HTML = """<!doctype html>
       if (data.is_active) {
         statusText.textContent = 'Активен'
         statusText.classList.add('ok')
-        statusMeta.textContent = `Осталось: ${data.remaining_days} дн. До: ${data.expires_at} UTC`
+        statusMeta.innerHTML = `Осталось: ${data.remaining_days} дн. До: ${data.expires_at} UTC<br>Трафик: ${formatTraffic(data.consumed_traffic_gb)}`
       } else if (data.trial_used) {
         statusText.textContent = 'Триал завершен'
         statusText.classList.remove('ok')
-        statusMeta.textContent = 'Повторная выдача недоступна. Напиши в поддержку.'
+        statusMeta.innerHTML = `Повторная выдача недоступна. Напиши в поддержку.<br>Трафик: ${formatTraffic(data.consumed_traffic_gb)}`
       } else {
         statusText.textContent = 'Не активирован'
         statusText.classList.remove('ok')
-        statusMeta.textContent = 'Нажми «Получить VPN», чтобы активировать подписку.'
+        statusMeta.innerHTML = 'Нажми «Получить VPN», чтобы активировать подписку.'
       }
 
       if (data.trial_used) {
@@ -801,14 +823,15 @@ _USER_APP_HTML = """<!doctype html>
 
     function showSubscription(url) {
       latestSubscriptionUrl = url || ''
+      const wrap = document.getElementById('subWrap')
       const box = document.getElementById('subLink')
       const copyBtn = document.getElementById('copyBtn')
       if (!latestSubscriptionUrl) {
-        box.style.display = 'none'
+        wrap.style.display = 'none'
         copyBtn.style.display = 'none'
         return
       }
-      box.style.display = 'block'
+      wrap.style.display = 'flex'
       box.textContent = latestSubscriptionUrl
       copyBtn.style.display = 'inline-block'
     }
