@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -96,6 +97,15 @@ def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
     if not base:
         return url
     return f"{base}/{url.lstrip('/')}"
+
+
+def _build_marzban_username(telegram_id: int, username: str) -> str:
+    base = (username or f"tg_{telegram_id}").lower()
+    safe = re.sub(r"[^a-z0-9_]", "_", base)
+    safe = re.sub(r"_+", "_", safe).strip("_")
+    if not safe:
+        safe = f"tg_{telegram_id}"
+    return f"labguard_{safe}"[:48].rstrip("_")
 
 
 def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastAPI:
@@ -333,7 +343,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
             raise HTTPException(status_code=503, detail="Marzban API не настроен")
 
         expiry_dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=settings.free_trial_days)
-        marzban_username = username or f"tg_{telegram_id}"
+        marzban_username = _build_marzban_username(telegram_id, username)
 
         try:
             marzban_user = await marzban.create_user(username=marzban_username, expire_at=expiry_dt)

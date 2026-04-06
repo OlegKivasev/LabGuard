@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
+import re
 from urllib.parse import urlparse
 
 from aiogram import Router
@@ -18,8 +19,17 @@ logger = logging.getLogger(__name__)
 
 def _build_marzban_username(message: Message) -> str:
     if message.from_user and message.from_user.username:
-        return message.from_user.username
-    return f"tg_{message.from_user.id}"
+        base = message.from_user.username.lower()
+    else:
+        base = f"tg_{message.from_user.id}"
+
+    safe = re.sub(r"[^a-z0-9_]", "_", base)
+    safe = re.sub(r"_+", "_", safe).strip("_")
+    if not safe:
+        safe = f"tg_{message.from_user.id}"
+
+    marzban_username = f"labguard_{safe}"
+    return marzban_username[:48].rstrip("_")
 
 
 def _parse_sqlite_dt(value: str) -> datetime:
