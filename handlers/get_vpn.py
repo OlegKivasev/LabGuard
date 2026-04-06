@@ -47,6 +47,17 @@ async def cmd_get(
             username=marzban_username,
             expire_at=expiry_dt,
         )
+    except RuntimeError as exc:
+        reason = str(exc)
+        logger.exception("Marzban runtime error for telegram_id=%s: %s", message.from_user.id, reason)
+        if "No enabled VLESS inbounds" in reason:
+            await message.answer(
+                "На сервере не найден активный VLESS inbound. "
+                "Включи VLESS inbound в Marzban и попробуй снова."
+            )
+            return
+        await message.answer("Ошибка Marzban API. Проверь настройки сервера и повтори /get")
+        return
     except Exception as exc:
         logger.exception("Failed to create Marzban user for telegram_id=%s: %s", message.from_user.id, exc)
         await message.answer("Не удалось создать VPN-конфиг. Попробуй позже или напиши /support")
