@@ -168,10 +168,13 @@ _ADMIN_APP_HTML = """<!doctype html>
     button.red { background: #d94c4c; }
     .search { display: flex; gap: 8px; margin-bottom: 12px; }
     input { flex: 1; background: #121a29; color: #e7eefc; border: 1px solid #2a3550; border-radius: 10px; padding: 8px 10px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 680px; }
     th, td { padding: 8px; border-bottom: 1px solid #2a3550; text-align: left; }
     th { opacity: .75; font-weight: 500; }
     .muted { opacity: .7; }
+    .actions { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+    .actions button { width: 100%; padding: 6px 10px; font-size: 12px; }
     @media (max-width: 800px) { .grid { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
@@ -188,12 +191,14 @@ _ADMIN_APP_HTML = """<!doctype html>
     <div class="grid" id="metrics"></div>
     <div class="card">
       <div class="head"><h3 style="margin:0">Пользователи</h3></div>
-      <table>
-        <thead>
-          <tr><th>Telegram ID</th><th>Username</th><th>Срок триала</th><th>Дата регистрации</th><th>Действия</th></tr>
-        </thead>
-        <tbody id="usersBody"></tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Telegram ID</th><th>Username</th><th>Срок триала</th><th>Дата регистрации</th><th>Действия</th></tr>
+          </thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
       <div class="muted" id="hint" style="margin-top:10px"></div>
     </div>
   </div>
@@ -263,7 +268,7 @@ _ADMIN_APP_HTML = """<!doctype html>
         body.innerHTML = ''
         for (const u of usersPayload.users) {
           const tr = document.createElement('tr')
-          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.expires_at || '-'}</td><td>${u.created_at || '-'}</td><td><button data-action="deactivate" data-id="${u.telegram_id}">Деактивировать</button> <button class="red" data-action="delete" data-id="${u.telegram_id}">Удалить</button></td>`
+          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.expires_at || '-'}</td><td>${u.created_at || '-'}</td><td><div class="actions"><button data-action="deactivate" data-id="${u.telegram_id}">Деактивировать</button><button class="red" data-action="delete" data-id="${u.telegram_id}">Удалить</button></div></td>`
           body.appendChild(tr)
         }
         document.getElementById('hint').textContent = `Показано ${usersPayload.users.length} пользователей`
