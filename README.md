@@ -52,5 +52,11 @@ Mini App settings:
 - `WEB_APP_TOKEN_TTL_MINUTES` (default `30`)
 
 Mini App sections:
-- `Метрика`: funnel, retention, traffic, support quality, infrastructure
+- `Метрика`:
+  - users with `/start`
+  - users who received VPN link
+  - users with first traffic consumption
+  - users online now
+  - active trials
+  - expired trials
 - `Пользователи`: search, deactivate trial, delete user
