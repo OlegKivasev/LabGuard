@@ -144,35 +144,30 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
     ) -> dict:
         _verify_admin(settings, token, x_tg_init_data or init_data)
 
-        local = db.get_local_metrics_snapshot()
-        marzban_usage: dict[str, Any] = {}
-        marzban_system: dict[str, Any] = {}
-        marzban_error = ""
+        local = db.get_admin_metrics_snapshot()
+        connected_users: int | None = None
+        online_now: int | None = None
+        marzban_error: str | None = None
         try:
             marzban_usage = await marzban.get_users_usage_snapshot()
             marzban_system = await marzban.get_system_snapshot()
+            connected_users = int(marzban_usage.get("connected_users", 0))
+            online_now = int(marzban_system.get("online_at", 0))
         except Exception as exc:
             marzban_error = str(exc)
 
-        funnel = local["funnel"]
-        connected = int(marzban_usage.get("connected_users", 0))
-        get_total = int(funnel.get("get_total", 0))
-        connect_rate = round((connected / get_total) * 100, 2) if get_total else 0.0
-
         return {
-            "local": local,
-            "marzban": {
-                "usage": marzban_usage,
-                "system": marzban_system,
-                "error": marzban_error,
+            "metrics": {
+                "start_users": int(local.get("start_users", 0)),
+                "vpn_link_users": int(local.get("vpn_link_users", 0)),
+                "connected_users": connected_users,
+                "online_now": online_now,
+                "active_trials": int(local.get("active_trials", 0)),
+                "expired_trials": int(local.get("expired_trials", 0)),
             },
-            "kpi": {
-                "start_to_get_pct": funnel.get("start_to_get_pct", 0),
-                "get_to_connected_pct": connect_rate,
-                "active_7d_pct": local["retention"].get("active_7d_pct", 0),
-                "avg_traffic_gb": marzban_usage.get("avg_traffic_gb", 0),
-                "heavy_users_5gb": marzban_usage.get("heavy_users_5gb", 0),
-                "ticket_rate_pct": local["support"].get("ticket_rate_from_active_pct", 0),
+            "meta": {
+                "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                "marzban_error": marzban_error,
             },
         }
 
