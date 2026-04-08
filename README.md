@@ -15,7 +15,7 @@ MVP Telegram bot for free VPN onboarding.
 
 On startup, the bot creates SQLite tables automatically if they do not exist.
 
-## Current scope (before Marzban API integration)
+## Current scope (with Marzban API integration)
 
 - `/start` registers user and logs event.
 - `/get` activates local 14-day trial timer in SQLite.
@@ -54,8 +54,8 @@ Mini App settings:
 Mini App sections:
 - `Метрика`:
   - users with `/start`
-  - users who received VPN link
-  - users with first traffic consumption
+  - users who received VPN link (from `app_get` and `app_get_existing` events)
+  - users with non-zero consumed traffic (`used_traffic > 0`)
   - users online now
   - active trials
   - expired trials
