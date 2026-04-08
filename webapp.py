@@ -147,12 +147,12 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         local = db.get_admin_metrics_snapshot()
         connected_users: int | None = None
         online_now: int | None = None
-        marzban_error: str | None = None
+        marzban_error = ""
         try:
             marzban_usage = await marzban.get_users_usage_snapshot()
             marzban_system = await marzban.get_system_snapshot()
             connected_users = int(marzban_usage.get("connected_users", 0))
-            online_now = int(marzban_system.get("online_at", 0))
+            online_now = int(marzban_system.get("online_users", 0))
         except Exception as exc:
             marzban_error = str(exc)
 
