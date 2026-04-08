@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -64,12 +65,17 @@ class Database:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self):
         path = Path(self.db_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
 
     def init_schema(self) -> None:
         with self.connect() as conn:
@@ -129,7 +135,17 @@ class Database:
             if not q:
                 rows = conn.execute(
                     """
-                    SELECT telegram_id, username, marzban_id, expires_at, created_at, no_trial_limits
+                    SELECT
+                        telegram_id,
+                        username,
+                        marzban_id,
+                        expires_at,
+                        created_at,
+                        no_trial_limits,
+                        CASE
+                            WHEN expires_at IS NOT NULL AND datetime(expires_at) > datetime('now') THEN 1
+                            ELSE 0
+                        END AS trial_active
                     FROM users
                     ORDER BY created_at DESC
                     LIMIT ?
@@ -141,7 +157,17 @@ class Database:
             pattern = f"%{q}%"
             rows = conn.execute(
                 """
-                SELECT telegram_id, username, marzban_id, expires_at, created_at, no_trial_limits
+                SELECT
+                    telegram_id,
+                    username,
+                    marzban_id,
+                    expires_at,
+                    created_at,
+                    no_trial_limits,
+                    CASE
+                        WHEN expires_at IS NOT NULL AND datetime(expires_at) > datetime('now') THEN 1
+                        ELSE 0
+                    END AS trial_active
                 FROM users
                 WHERE CAST(telegram_id AS TEXT) LIKE ?
                    OR LOWER(COALESCE(username, '')) LIKE LOWER(?)
@@ -151,6 +177,33 @@ class Database:
                 (pattern, pattern, limit),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def get_admin_user_detail(self, telegram_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    telegram_id,
+                    username,
+                    marzban_id,
+                    created_at,
+                    expires_at,
+                    no_trial_limits,
+                    CASE
+                        WHEN expires_at IS NOT NULL AND datetime(expires_at) > datetime('now') THEN 1
+                        ELSE 0
+                    END AS trial_active
+                FROM users
+                WHERE telegram_id = ?
+                """,
+                (telegram_id,),
+            ).fetchone()
+            if row is None:
+                return None
+
+            payload = dict(row)
+            payload["trial_used"] = self.has_received_trial(telegram_id)
+            return payload
 
     def log_event(self, telegram_id: int, event: str) -> None:
         with self.connect() as conn:

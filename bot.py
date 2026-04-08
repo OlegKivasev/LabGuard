@@ -113,7 +113,7 @@ async def main() -> None:
     web_server = None
     web_task = None
     if settings.web_app_base_url:
-        web_server, web_task = await start_web_app_server(database, settings, marzban_client)
+        web_server, web_task = await start_web_app_server(database, settings, marzban_client, bot=bot)
 
     try:
         await dp.start_polling(bot)

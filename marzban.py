@@ -109,6 +109,18 @@ class MarzbanClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_user_online_status(self, username: str) -> dict[str, Any]:
+        user = await self.get_user(username)
+        if user is None:
+            return {"online_now": None, "online_status": "unknown"}
+
+        online_at = user.get("online_at")
+        online_now = bool(online_at)
+        return {
+            "online_now": online_now,
+            "online_status": "online" if online_now else "offline",
+        }
+
     async def get_inbounds(self) -> dict[str, list[dict[str, Any]]]:
         response = await self._request_with_fallback("GET", "/api/inbounds")
         response.raise_for_status()

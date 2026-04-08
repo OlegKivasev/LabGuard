@@ -110,13 +110,62 @@ def _build_marzban_username(telegram_id: int, username: str) -> str:
 
 
 class AdminTrialPayload(BaseModel):
-    days: int = 14
-    unlimited: bool = False
+    expires_at: str
     no_trial_limits: bool = False
 
 
-def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastAPI:
+def _parse_admin_datetime_local(value: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid expires_at format") from exc
+
+
+def _to_admin_datetime_local(expires_at: str | None) -> str:
+    if expires_at:
+        try:
+            dt = _parse_sqlite_dt(expires_at)
+        except ValueError:
+            dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=14)
+    else:
+        dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=14)
+    return dt.strftime("%Y-%m-%dT%H:%M")
+
+
+def _format_trial_notification(expires_at: str) -> str:
+    return (
+        "✨ Администратор обновил ваш пробный период LabGuard.\n\n"
+        f"Новый срок действия доступа: {expires_at} UTC.\n"
+        "Если приложение уже открыто, просто обновите статус и продолжайте пользоваться сервисом."
+    )
+
+
+def build_app(
+    db: Database,
+    settings: Settings,
+    marzban: MarzbanClient,
+    bot: Any | None = None,
+) -> FastAPI:
     app = FastAPI(title="VPN Admin Mini App", docs_url=None, redoc_url=None)
+
+    async def _resolve_online_state(user: dict[str, Any], telegram_id: int) -> dict[str, Any]:
+        for candidate in _candidate_marzban_usernames(user, telegram_id):
+            try:
+                status = await marzban.get_user_online_status(candidate)
+            except Exception:
+                return {"online_now": None, "online_status": "unknown"}
+            if status.get("online_status") != "unknown":
+                return status
+        return {"online_now": None, "online_status": "unknown"}
+
+    async def _notify_trial_changed(telegram_id: int, expires_at: str) -> bool:
+        if bot is None:
+            return False
+        try:
+            await bot.send_message(telegram_id, _format_trial_notification(expires_at))
+        except Exception:
+            return False
+        return True
 
     @app.get("/admin-app", response_class=HTMLResponse)
     async def admin_app_page(
@@ -183,6 +232,28 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         users = db.search_users(query=q, limit=limit)
         return {"users": users}
 
+    @app.get("/admin-app/api/user/{telegram_id}")
+    async def admin_user_detail(
+        telegram_id: int,
+        token: str = Query(""),
+        init_data: str = Query(""),
+        x_tg_init_data: str = Header(default="", alias="X-TG-Init-Data"),
+    ) -> dict:
+        _verify_admin(settings, token, x_tg_init_data or init_data)
+
+        user = db.get_admin_user_detail(telegram_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        online_state = await _resolve_online_state(user, telegram_id)
+        return {
+            "user": {
+                **user,
+                **online_state,
+                "edit_expires_at": _to_admin_datetime_local(user.get("expires_at")),
+            }
+        }
+
     @app.post("/admin-app/api/user/{telegram_id}/deactivate")
     async def admin_deactivate(
         telegram_id: int,
@@ -246,17 +317,8 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if payload.days < 1 or payload.days > 3650:
-            raise HTTPException(status_code=400, detail="days must be in range 1..3650")
-
-        target_dt = None
-        if not payload.unlimited:
-            target_dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=payload.days)
-        local_expires = (
-            "2099-12-31 23:59:59"
-            if payload.unlimited
-            else target_dt.strftime("%Y-%m-%d %H:%M:%S")
-        )
+        target_dt = _parse_admin_datetime_local(payload.expires_at)
+        local_expires = target_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         marzban_changed = False
         for candidate in _candidate_marzban_usernames(user, telegram_id):
@@ -266,12 +328,7 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
 
         if not marzban_changed:
             marzban_username = _build_marzban_username(telegram_id, str(user.get("username") or ""))
-            create_expiry = (
-                datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=36500)
-                if payload.unlimited
-                else target_dt
-            )
-            marzban_user = await marzban.create_user(username=marzban_username, expire_at=create_expiry)
+            marzban_user = await marzban.create_user(username=marzban_username, expire_at=target_dt)
             marzban_changed = bool(marzban_user)
             user = db.get_user_by_telegram_id(telegram_id) or user
             db.set_marzban_binding(
@@ -288,12 +345,14 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
             db.mark_trial_used(telegram_id)
 
         db.log_event(telegram_id, "admin_set_trial_webapp")
+        notification_sent = await _notify_trial_changed(telegram_id, local_expires)
         return {
             "ok": True,
             "expires_at": local_expires,
-            "unlimited": payload.unlimited,
+            "trial_active": True,
             "no_trial_limits": payload.no_trial_limits,
             "marzban_changed": marzban_changed,
+            "notification_sent": notification_sent,
         }
 
     @app.get("/app", response_class=HTMLResponse)
@@ -451,8 +510,9 @@ async def start_web_app_server(
     db: Database,
     settings: Settings,
     marzban: MarzbanClient,
+    bot: Any | None = None,
 ) -> tuple[uvicorn.Server, asyncio.Task]:
-    app = build_app(db, settings, marzban)
+    app = build_app(db, settings, marzban, bot=bot)
     config = uvicorn.Config(
         app=app,
         host=settings.web_app_host,
@@ -571,15 +631,101 @@ _ADMIN_APP_HTML = """<!doctype html>
       border-radius: 10px;
       padding: 8px 10px;
     }
-    .table-wrap { width: 100%; overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
-    th, td { padding: 8px; border-bottom: 1px solid #2a3550; text-align: left; }
     th { opacity: .75; font-weight: 500; }
     .muted { opacity: .7; }
     .actions { display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
     .actions button { width: 100%; padding: 6px 10px; font-size: 12px; }
+    #usersSection {
+      background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+      border: 1px solid #d8e6ff;
+      border-radius: 16px;
+      padding: 12px;
+      color: #1e2b4a;
+    }
+    #usersSection .card {
+      background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
+      border: 1px solid #d5e3ff;
+      box-shadow: 0 8px 18px rgba(133, 159, 211, 0.16);
+    }
+    #usersSection input {
+      background: #ffffff;
+      color: #243656;
+      border: 1px solid #cfe0ff;
+    }
+    .users-alert {
+      display: none;
+      margin-bottom: 12px;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .users-alert.info { display: block; background: #eef5ff; border: 1px solid #cdddff; color: #29406d; }
+    .users-alert.success { display: block; background: #edf9f2; border: 1px solid #caead7; color: #24533a; }
+    .users-alert.warn { display: block; background: #fff4e7; border: 1px solid #f3d8a9; color: #80531e; }
+    .users-alert.error { display: block; background: #fff1f2; border: 1px solid #f4c7cd; color: #8f2b37; }
+    .user-list { display: flex; flex-direction: column; gap: 10px; }
+    .user-row {
+      width: 100%;
+      border: 1px solid #d8e5ff;
+      background: #ffffff;
+      border-radius: 14px;
+      padding: 14px;
+      text-align: left;
+      color: #1f3152;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(143, 166, 210, 0.12);
+    }
+    .user-row:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(143, 166, 210, 0.18); }
+    .user-row-head, .user-detail-head, .detail-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .user-row-id, .detail-username { font-size: 18px; font-weight: 700; color: #1d2f4e; }
+    .user-row-meta, .detail-subtitle { margin-top: 4px; font-size: 13px; color: #60759e; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge.success { background: #edf8f1; color: #246245; border: 1px solid #cce8d7; }
+    .badge.danger { background: #fff1f2; color: #8c3440; border: 1px solid #f0c7cd; }
+    .badge.info { background: #eef5ff; color: #2f4f88; border: 1px solid #d3e2ff; }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .detail-field {
+      padding: 12px;
+      border: 1px solid #d9e5fb;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    .detail-label { font-size: 12px; color: #667aa1; margin-bottom: 6px; }
+    .detail-value { font-size: 15px; font-weight: 600; color: #1f3150; }
+    .detail-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
+    .secondary-button { background: #edf3ff; color: #2e4f84; border: 1px solid #d0def8; }
+    .warn-button { background: #fff1de; color: #83501d; border: 1px solid #f0d3a8; }
+    .ghost-button { background: transparent; color: #406398; border: 1px solid #d2dff6; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .inline-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dbe6fa; }
+    .inline-form[hidden] { display: none; }
+    .inline-form-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .empty-state {
+      border: 1px dashed #c9daf8;
+      border-radius: 14px;
+      padding: 22px 16px;
+      text-align: center;
+      color: #61769f;
+      background: rgba(255, 255, 255, 0.72);
+    }
     @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .title { font-size: 32px; } }
-    @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 820px) { .detail-layout { grid-template-columns: 1fr; } .detail-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } .user-row-head, .user-detail-head, .detail-topline, .search, .inline-form-actions { flex-direction: column; } button { width: 100%; } }
   </style>
 </head>
 <body>
@@ -608,20 +754,24 @@ _ADMIN_APP_HTML = """<!doctype html>
     </section>
 
     <section id="usersSection" class="section">
-      <div class="search">
-        <input id="searchInput" placeholder="Поиск: Telegram ID или username" />
-        <button id="searchBtn">Найти</button>
+      <div class="metrics-head">
+        <h2 class="metrics-title">Пользователи</h2>
+        <p class="metrics-subtitle">Поиск, карточка пользователя и управление сроком пробного периода в едином стиле админки.</p>
       </div>
       <div class="card">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Telegram ID</th><th>Username</th><th>Срок триала</th><th>Без лимитов</th><th>Дата регистрации</th><th>Действия</th></tr>
-            </thead>
-            <tbody id="usersBody"></tbody>
-          </table>
+        <div class="search">
+          <input id="searchInput" placeholder="Поиск по username или Telegram ID" />
+          <button id="searchBtn">Найти</button>
         </div>
-        <div class="muted" id="usersHint" style="margin-top:10px"></div>
+        <div id="usersFlash" class="users-alert"></div>
+        <div id="userListSection">
+          <div id="userList" class="user-list"></div>
+          <div class="muted" id="usersHint" style="margin-top:10px"></div>
+        </div>
+        <div id="userDetailSection" hidden>
+          <button id="backToListBtn" class="ghost-button">← Назад к списку</button>
+          <div id="userDetailBody" style="margin-top:12px"></div>
+        </div>
       </div>
     </section>
   </div>
@@ -655,10 +805,22 @@ _ADMIN_APP_HTML = """<!doctype html>
       if (!res.ok) throw new Error('metrics failed')
       return res.json()
     }
+    const userState = {
+      search: '',
+      users: [],
+      selectedUserId: null,
+      currentUser: null,
+    }
+
     async function loadUsers(search) {
       const q = search ? `&q=${encodeURIComponent(search)}` : ''
       const res = await fetch(withAuth(`/admin-app/api/users?limit=50${q}`), { headers: authHeaders() })
       if (!res.ok) throw new Error('users failed')
+      return res.json()
+    }
+    async function loadUserDetail(telegramId) {
+      const res = await fetch(withAuth(`/admin-app/api/user/${telegramId}`), { headers: authHeaders() })
+      if (!res.ok) throw new Error('user detail failed')
       return res.json()
     }
     async function deactivateUser(telegramId) {
@@ -671,14 +833,108 @@ _ADMIN_APP_HTML = """<!doctype html>
       if (!res.ok) throw new Error('delete failed')
       return res.json()
     }
-    async function setTrial(telegramId, days, unlimited, noTrialLimits) {
+    async function setTrial(telegramId, expiresAt, noTrialLimits) {
       const res = await fetch(withAuth(`/admin-app/api/user/${telegramId}/trial`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ days, unlimited, no_trial_limits: noTrialLimits }),
+        body: JSON.stringify({ expires_at: expiresAt, no_trial_limits: noTrialLimits }),
       })
       if (!res.ok) throw new Error('set trial failed')
       return res.json()
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;')
+    }
+    function badgeClass(active) { return active ? 'success' : 'danger' }
+    function trialLabel(active) { return active ? 'Активен' : 'Неактивен' }
+    function onlineLabel(status) {
+      if (status === 'online') return 'Да'
+      if (status === 'offline') return 'Нет'
+      return 'Не удалось определить'
+    }
+    function setUsersFlash(message, tone='info') {
+      const el = document.getElementById('usersFlash')
+      if (!message) {
+        el.className = 'users-alert'
+        el.textContent = ''
+        return
+      }
+      el.className = `users-alert ${tone}`
+      el.textContent = message
+    }
+    function showUserList() {
+      document.getElementById('userListSection').hidden = false
+      document.getElementById('userDetailSection').hidden = true
+    }
+    function showUserDetail() {
+      document.getElementById('userListSection').hidden = true
+      document.getElementById('userDetailSection').hidden = false
+    }
+    function renderUsersList(users) {
+      const list = document.getElementById('userList')
+      if (!users.length) {
+        list.innerHTML = '<div class="empty-state">Ничего не найдено. Попробуйте другой username или Telegram ID.</div>'
+        return
+      }
+      list.innerHTML = users.map((u) => `
+        <button class="user-row" data-id="${u.telegram_id}">
+          <div class="user-row-head">
+            <div>
+              <div class="user-row-id">${escapeHtml(u.telegram_id)}</div>
+              <div class="user-row-meta">(${u.username ? '@' + escapeHtml(u.username) : 'без username'})</div>
+            </div>
+            <span class="badge ${badgeClass(Boolean(u.trial_active))}">${Boolean(u.trial_active) ? '✅' : '❌'} ${trialLabel(Boolean(u.trial_active))}</span>
+          </div>
+        </button>
+      `).join('')
+    }
+    function renderUserDetail(user) {
+      const body = document.getElementById('userDetailBody')
+      body.innerHTML = `
+        <div class="detail-layout">
+          <div class="card">
+            <div class="user-detail-head">
+              <div>
+                <div class="detail-username">${user.username ? '@' + escapeHtml(user.username) : 'Без username'}</div>
+                <div class="detail-subtitle">Telegram ID: ${escapeHtml(user.telegram_id)}</div>
+              </div>
+              <span class="badge ${badgeClass(Boolean(user.trial_active))}">${trialLabel(Boolean(user.trial_active))}</span>
+            </div>
+            <div class="detail-grid">
+              <div class="detail-field"><div class="detail-label">Telegram ID</div><div class="detail-value">${escapeHtml(user.telegram_id)}</div></div>
+              <div class="detail-field"><div class="detail-label">Username</div><div class="detail-value">${user.username ? '@' + escapeHtml(user.username) : 'Без username'}</div></div>
+              <div class="detail-field"><div class="detail-label">Дата регистрации</div><div class="detail-value">${escapeHtml(user.created_at || '—')}</div></div>
+              <div class="detail-field"><div class="detail-label">Пробный период действует до</div><div class="detail-value">${escapeHtml(user.expires_at || '—')}</div></div>
+              <div class="detail-field"><div class="detail-label">Статус пробного периода</div><div class="detail-value">${trialLabel(Boolean(user.trial_active))}</div></div>
+              <div class="detail-field"><div class="detail-label">Сейчас онлайн</div><div class="detail-value">${onlineLabel(user.online_status)}</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="k" style="color:#5a6e96;opacity:1;">Действия</div>
+            <div class="detail-subtitle" style="margin-bottom:12px;">Управление пользователем и сроком пробного периода.</div>
+            <div class="actions">
+              <button data-action="edit-trial" data-id="${user.telegram_id}">Изменить дату подписки</button>
+              <button class="warn-button" data-action="deactivate" data-id="${user.telegram_id}">Деактивировать</button>
+              <button class="red" data-action="delete" data-id="${user.telegram_id}">Удалить</button>
+            </div>
+            <div id="trialEditor" class="inline-form" hidden>
+              <div class="detail-label">Дата окончания пробного периода</div>
+              <input id="trialDateInput" type="datetime-local" value="${escapeHtml(user.edit_expires_at || '')}" />
+              <div class="inline-form-actions">
+                <button id="saveTrialBtn" data-action="save-trial" data-id="${user.telegram_id}" disabled>Сохранить</button>
+                <button id="cancelTrialBtn" class="secondary-button" data-action="cancel-trial">Отмена</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `
+      showUserDetail()
     }
 
     function metricCard(title, value, caption, tone) {
@@ -724,69 +980,116 @@ _ADMIN_APP_HTML = """<!doctype html>
       }
     }
 
-    async function refreshUsers() {
+    async function openUserDetail(telegramId) {
+      const payload = await loadUserDetail(telegramId)
+      userState.selectedUserId = Number(telegramId)
+      userState.currentUser = payload.user
+      renderUserDetail(payload.user)
+    }
+
+    async function refreshUsers(preserveDetail = true) {
       try {
         const searchText = document.getElementById('searchInput').value.trim()
+        userState.search = searchText
         const usersPayload = await loadUsers(searchText)
-        const body = document.getElementById('usersBody')
-        body.innerHTML = ''
-        for (const u of usersPayload.users) {
-          const tr = document.createElement('tr')
-          const noLimits = Number(u.no_trial_limits || 0) === 1 ? '✅' : '—'
-          tr.innerHTML = `<td>${u.telegram_id}</td><td>${u.username || '-'}</td><td>${u.expires_at || '-'}</td><td>${noLimits}</td><td>${u.created_at || '-'}</td><td><div class="actions"><button data-action="trial" data-id="${u.telegram_id}">Триал</button><button data-action="deactivate" data-id="${u.telegram_id}">Деактивировать</button><button class="red" data-action="delete" data-id="${u.telegram_id}">Удалить</button></div></td>`
-          body.appendChild(tr)
-        }
+        userState.users = usersPayload.users || []
+        renderUsersList(userState.users)
         document.getElementById('usersHint').textContent = `Показано ${usersPayload.users.length} пользователей`
+        if (preserveDetail && userState.selectedUserId) {
+          await openUserDetail(userState.selectedUserId)
+        } else if (!userState.selectedUserId) {
+          showUserList()
+        }
       } catch (e) {
         document.getElementById('usersHint').textContent = 'Ошибка загрузки пользователей'
+        setUsersFlash('Не удалось загрузить список пользователей.', 'error')
       }
     }
 
-    async function refreshAll() { await Promise.all([refreshMetrics(), refreshUsers()]) }
+    async function refreshAll() { await Promise.all([refreshMetrics(), refreshUsers(Boolean(userState.selectedUserId))]) }
 
     document.querySelectorAll('.tab').forEach((el) => {
       el.addEventListener('click', () => setTabs(el.dataset.tab))
     })
-    document.getElementById('usersBody').addEventListener('click', async (event) => {
+    document.getElementById('userList').addEventListener('click', async (event) => {
+      const target = event.target
+      const row = target instanceof HTMLElement ? target.closest('.user-row') : null
+      if (!row) return
+      try {
+        setUsersFlash('')
+        await openUserDetail(row.dataset.id)
+      } catch (e) {
+        setUsersFlash('Не удалось открыть карточку пользователя.', 'error')
+      }
+    })
+    document.getElementById('userDetailBody').addEventListener('click', async (event) => {
       const target = event.target
       if (!(target instanceof HTMLButtonElement)) return
       const action = target.dataset.action
       const id = target.dataset.id
-      if (!action || !id) return
       try {
-        if (action === 'deactivate') {
+        if (action === 'edit-trial') {
+          document.getElementById('trialEditor').hidden = false
+          return
+        }
+        if (action === 'cancel-trial') {
+          document.getElementById('trialEditor').hidden = true
+          document.getElementById('trialDateInput').value = userState.currentUser.edit_expires_at || ''
+          document.getElementById('saveTrialBtn').disabled = true
+          return
+        }
+        if (action === 'deactivate' && id) {
           if (!confirm(`Деактивировать триал для ${id}?`)) return
           await deactivateUser(id)
+          setUsersFlash('Пробный период пользователя деактивирован.', 'success')
         }
-        if (action === 'delete') {
+        if (action === 'delete' && id) {
           if (!confirm(`Удалить пользователя ${id}?`)) return
           await deleteUser(id)
+          userState.selectedUserId = null
+          userState.currentUser = null
+          showUserList()
+          setUsersFlash('Пользователь удален. Триал можно будет выдать заново.', 'success')
+          await refreshUsers(false)
+          await refreshMetrics()
+          return
         }
-        if (action === 'trial') {
-          const unlimited = confirm(`Сделать для ${id} без срока?\nОК = без срока, Отмена = задать дни`)
-          let days = 14
-          if (!unlimited) {
-            const rawDays = prompt('На сколько дней выдать/возобновить триал?', '14')
-            if (rawDays === null) return
-            days = Number(rawDays)
-            if (!Number.isFinite(days) || days < 1) {
-              alert('Укажи число дней от 1')
-              return
-            }
+        if (action === 'save-trial' && id) {
+          const dateValue = document.getElementById('trialDateInput').value
+          if (!dateValue) {
+            setUsersFlash('Укажите дату окончания пробного периода.', 'warn')
+            return
           }
-          const noTrialLimits = confirm('Включить галочку "без ограничений" (повторные триалы разрешены)?')
-          await setTrial(id, days, unlimited, noTrialLimits)
+          const result = await setTrial(id, dateValue, Boolean(userState.currentUser && userState.currentUser.no_trial_limits))
+          if (result.notification_sent) {
+            setUsersFlash(`Дата пробного периода обновлена до ${result.expires_at}. Пользователь уведомлен.`, 'success')
+          } else {
+            setUsersFlash(`Дата пробного периода обновлена до ${result.expires_at}, но уведомление не отправлено.`, 'warn')
+          }
         }
-        await refreshUsers()
+        await refreshUsers(true)
         await refreshMetrics()
       } catch (e) {
-        document.getElementById('usersHint').textContent = 'Ошибка выполнения действия'
+        setUsersFlash('Не удалось выполнить действие для пользователя.', 'error')
       }
     })
+    document.getElementById('userDetailBody').addEventListener('input', (event) => {
+      const target = event.target
+      if (!(target instanceof HTMLInputElement) || target.id !== 'trialDateInput') return
+      const saveBtn = document.getElementById('saveTrialBtn')
+      if (!(saveBtn instanceof HTMLButtonElement)) return
+      saveBtn.disabled = target.value === (userState.currentUser && userState.currentUser.edit_expires_at)
+    })
     document.getElementById('refreshBtn').addEventListener('click', refreshAll)
-    document.getElementById('searchBtn').addEventListener('click', refreshUsers)
+    document.getElementById('searchBtn').addEventListener('click', () => refreshUsers(false))
     document.getElementById('searchInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); refreshUsers() }
+      if (e.key === 'Enter') { e.preventDefault(); refreshUsers(false) }
+    })
+    document.getElementById('backToListBtn').addEventListener('click', () => {
+      userState.selectedUserId = null
+      userState.currentUser = null
+      setUsersFlash('')
+      showUserList()
     })
 
     setupBackToUserButton()
