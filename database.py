@@ -359,6 +359,54 @@ class Database:
             "open_tickets": open_tickets,
         }
 
+    def get_admin_metrics_snapshot(self) -> dict[str, int]:
+        with self.connect() as conn:
+            start_users = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT telegram_id)
+                    FROM events
+                    WHERE event = 'start'
+                    """
+                ).fetchone()[0]
+            )
+            vpn_link_users = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT telegram_id)
+                    FROM events
+                    WHERE event IN ('app_get', 'app_get_existing')
+                    """
+                ).fetchone()[0]
+            )
+            active_trials = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE expires_at IS NOT NULL
+                      AND datetime(expires_at) > datetime('now')
+                    """
+                ).fetchone()[0]
+            )
+            expired_trials = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE expires_at IS NOT NULL
+                      AND datetime(expires_at) <= datetime('now')
+                    """
+                ).fetchone()[0]
+            )
+
+        return {
+            "start_users": start_users,
+            "vpn_link_users": vpn_link_users,
+            "active_trials": active_trials,
+            "expired_trials": expired_trials,
+        }
+
     def get_local_metrics_snapshot(self) -> dict[str, Any]:
         with self.connect() as conn:
             total_users = int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
