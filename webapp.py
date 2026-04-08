@@ -144,35 +144,30 @@ def build_app(db: Database, settings: Settings, marzban: MarzbanClient) -> FastA
     ) -> dict:
         _verify_admin(settings, token, x_tg_init_data or init_data)
 
-        local = db.get_local_metrics_snapshot()
-        marzban_usage: dict[str, Any] = {}
-        marzban_system: dict[str, Any] = {}
+        local = db.get_admin_metrics_snapshot()
+        connected_users: int | None = None
+        online_now: int | None = None
         marzban_error = ""
         try:
             marzban_usage = await marzban.get_users_usage_snapshot()
             marzban_system = await marzban.get_system_snapshot()
+            connected_users = int(marzban_usage.get("connected_users", 0))
+            online_now = int(marzban_system.get("online_users", 0))
         except Exception as exc:
             marzban_error = str(exc)
 
-        funnel = local["funnel"]
-        connected = int(marzban_usage.get("connected_users", 0))
-        get_total = int(funnel.get("get_total", 0))
-        connect_rate = round((connected / get_total) * 100, 2) if get_total else 0.0
-
         return {
-            "local": local,
-            "marzban": {
-                "usage": marzban_usage,
-                "system": marzban_system,
-                "error": marzban_error,
+            "metrics": {
+                "start_users": int(local.get("start_users", 0)),
+                "vpn_link_users": int(local.get("vpn_link_users", 0)),
+                "connected_users": connected_users,
+                "online_now": online_now,
+                "active_trials": int(local.get("active_trials", 0)),
+                "expired_trials": int(local.get("expired_trials", 0)),
             },
-            "kpi": {
-                "start_to_get_pct": funnel.get("start_to_get_pct", 0),
-                "get_to_connected_pct": connect_rate,
-                "active_7d_pct": local["retention"].get("active_7d_pct", 0),
-                "avg_traffic_gb": marzban_usage.get("avg_traffic_gb", 0),
-                "heavy_users_5gb": marzban_usage.get("heavy_users_5gb", 0),
-                "ticket_rate_pct": local["support"].get("ticket_rate_from_active_pct", 0),
+            "meta": {
+                "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                "marzban_error": marzban_error,
             },
         }
 
@@ -478,25 +473,104 @@ _ADMIN_APP_HTML = """<!doctype html>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { color-scheme: dark; }
-    body { font-family: -apple-system, Segoe UI, sans-serif; margin: 0; background: #0f1420; color: #e7eefc; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Segoe UI, sans-serif;
+      margin: 0;
+      background: #0f1420;
+      color: #e7eefc;
+    }
     .wrap { max-width: 1024px; margin: 0 auto; padding: 14px; }
     .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
     .head-actions { display: flex; gap: 8px; }
     .title { margin: 0; font-size: 36px; }
     .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-    .tab { background: #1b2334; border: 1px solid #2a3550; color: #e7eefc; border-radius: 999px; padding: 8px 12px; cursor: pointer; }
+    .tab {
+      background: #1b2334;
+      border: 1px solid #2a3550;
+      color: #e7eefc;
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
     .tab.active { background: #2f6df6; border-color: #2f6df6; }
     .section { display: none; }
     .section.active { display: block; }
-    .grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-bottom: 14px; }
-    .card { background: #1b2334; border: 1px solid #2a3550; border-radius: 12px; padding: 12px; }
-    .k { font-size: 12px; opacity: .75; }
-    .v { font-size: 24px; font-weight: 700; margin-top: 6px; }
-    .mini { font-size: 12px; opacity: .85; margin-top: 4px; }
+    .metrics-head { margin: 2px 0 12px; }
+    .metrics-title { margin: 0 0 4px; font-size: 20px; }
+    .metrics-subtitle { margin: 0; font-size: 13px; opacity: .78; }
+    .metrics-meta { margin: 6px 0 0; font-size: 12px; }
+    .metrics-warning {
+      display: none;
+      margin-bottom: 12px;
+      background: rgba(217, 76, 76, 0.12);
+      border: 1px solid rgba(217, 76, 76, 0.35);
+      color: #ffd8d8;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .card {
+      background: #1b2334;
+      border: 1px solid #2a3550;
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .metric-card {
+      background: linear-gradient(160deg, rgba(47, 109, 246, 0.17) 0%, rgba(27, 35, 52, 0.95) 65%);
+      border: 1px solid rgba(83, 122, 205, 0.5);
+      box-shadow: 0 8px 20px rgba(8, 14, 26, 0.4);
+    }
+    #metricsSection {
+      background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+      border: 1px solid #d8e6ff;
+      border-radius: 16px;
+      padding: 12px;
+      color: #1e2b4a;
+    }
+    #metricsSection .metrics-title { color: #1c2a49; }
+    #metricsSection .metrics-subtitle,
+    #metricsSection .metrics-meta { color: #4f6288; opacity: 1; }
+    #metricsSection .metrics-warning {
+      background: #fff1f2;
+      border-color: #f9c5cb;
+      color: #8e2f3a;
+    }
+    .metrics-grid { margin-bottom: 0; }
+    #metricsSection .metric-card {
+      background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
+      border: 1px solid #d5e3ff;
+      box-shadow: 0 8px 18px rgba(133, 159, 211, 0.22);
+    }
+    .metric-caption {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.35;
+      color: #5b6f96;
+    }
+    .tone-primary { border-top: 3px solid #84a9ff !important; }
+    .tone-accent { border-top: 3px solid #7fa7f6 !important; }
+    .tone-success { border-top: 3px solid #89cfb0 !important; }
+    .tone-info { border-top: 3px solid #89bfdf !important; }
+    .tone-warn { border-top: 3px solid #edbe7f !important; }
+    .tone-danger { border-top: 3px solid #eca2a7 !important; }
+    .k { font-size: 12px; opacity: .78; letter-spacing: 0.02em; }
+    #metricsSection .k { color: #5a6e96; opacity: 1; }
+    #metricsSection .v { color: #1e2c49; }
+    .v { font-size: 28px; font-weight: 700; margin-top: 8px; color: #ffffff; }
     button { background: #2f6df6; color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
     button.red { background: #d94c4c; }
     .search { display: flex; gap: 8px; margin-bottom: 12px; }
-    input { flex: 1; background: #121a29; color: #e7eefc; border: 1px solid #2a3550; border-radius: 10px; padding: 8px 10px; }
+    input {
+      flex: 1;
+      background: #121a29;
+      color: #e7eefc;
+      border: 1px solid #2a3550;
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
     .table-wrap { width: 100%; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
     th, td { padding: 8px; border-bottom: 1px solid #2a3550; text-align: left; }
@@ -504,7 +578,8 @@ _ADMIN_APP_HTML = """<!doctype html>
     .muted { opacity: .7; }
     .actions { display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
     .actions button { width: 100%; padding: 6px 10px; font-size: 12px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } .title { font-size: 32px; } }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .title { font-size: 32px; } }
+    @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -523,24 +598,13 @@ _ADMIN_APP_HTML = """<!doctype html>
     </div>
 
     <section id="metricsSection" class="section active">
-      <div class="grid" id="kpiGrid"></div>
-      <div class="card" style="margin-bottom: 10px;">
-        <h3 style="margin-top:0">Воронка и удержание</h3>
-        <div id="funnelBox" class="mini"></div>
+      <div class="metrics-head">
+        <h2 class="metrics-title">Ключевые метрики</h2>
+        <p class="metrics-subtitle">Сводка по воронке, подключению и состоянию триалов.</p>
+        <p id="metricsGeneratedAt" class="metrics-meta">Сформировано: —</p>
       </div>
-      <div class="card" style="margin-bottom: 10px;">
-        <h3 style="margin-top:0">Вовлеченность и трафик</h3>
-        <div id="engagementBox" class="mini"></div>
-      </div>
-      <div class="card" style="margin-bottom: 10px;">
-        <h3 style="margin-top:0">Качество сервиса и поддержка</h3>
-        <div id="qualityBox" class="mini"></div>
-      </div>
-      <div class="card">
-        <h3 style="margin-top:0">Инфраструктура</h3>
-        <div id="infraBox" class="mini"></div>
-        <div id="metricsError" class="mini muted" style="margin-top:8px;"></div>
-      </div>
+      <div id="metricsWarning" class="metrics-warning"></div>
+      <div class="grid metrics-grid" id="kpiGrid"></div>
     </section>
 
     <section id="usersSection" class="section">
@@ -617,8 +681,9 @@ _ADMIN_APP_HTML = """<!doctype html>
       return res.json()
     }
 
-    function metricCard(title, value, sub='') {
-      return `<div class="card"><div class="k">${title}</div><div class="v">${fmt(value)}</div><div class="mini">${sub}</div></div>`
+    function metricCard(title, value, caption, tone) {
+      const toneClass = tone ? ` tone-${tone}` : ''
+      return `<div class="card metric-card${toneClass}"><div class="k">${title}</div><div class="v">${fmt(value)}</div><div class="metric-caption">${caption}</div></div>`
     }
     function setTabs(tab) {
       document.querySelectorAll('.tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab))
@@ -627,63 +692,35 @@ _ADMIN_APP_HTML = """<!doctype html>
     }
 
     async function refreshMetrics() {
+      const warning = document.getElementById('metricsWarning')
+      const generatedAtEl = document.getElementById('metricsGeneratedAt')
       try {
         const data = await loadMetrics()
-        const kpi = data.kpi || {}
-        const local = data.local || {}
-        const retention = local.retention || {}
-        const support = local.support || {}
-        const usage = (data.marzban || {}).usage || {}
-        const system = (data.marzban || {}).system || {}
-        const err = (data.marzban || {}).error || ''
+        const metrics = data.metrics || {}
+        const meta = data.meta || {}
+        generatedAtEl.textContent = `Сформировано: ${meta.generated_at || '—'}`
 
         document.getElementById('kpiGrid').innerHTML = [
-          metricCard('Конверсия start→get', `${fmt(kpi.start_to_get_pct)}%`, 'Цель: >= 50%'),
-          metricCard('Конверсия get→подключился', `${fmt(kpi.get_to_connected_pct)}%`, 'Цель: >= 70%'),
-          metricCard('Активны на 7-й день', `${fmt(kpi.active_7d_pct)}%`, 'Цель: >= 30%'),
-          metricCard('Средний трафик (GB)', fmt(kpi.avg_traffic_gb), 'Цель: >= 3 GB'),
-          metricCard('Пользователи > 5GB', fmt(kpi.heavy_users_5gb), 'Реально пользуются'),
-          metricCard('Тикеты от активных', `${fmt(kpi.ticket_rate_pct)}%`, 'Норма: < 10%'),
+          metricCard('Нажали /start', metrics.start_users, 'Уникальные пользователи, открывшие бота.', 'primary'),
+          metricCard('Получили VPN ссылку', metrics.vpn_link_users, 'Пользователи, дошедшие до выдачи ссылки.', 'accent'),
+          metricCard('Подключили и потратили трафик', metrics.connected_users, 'Есть подтвержденное подключение с трафиком.', 'success'),
+          metricCard('Онлайн сейчас', metrics.online_now, 'Текущее число активных подключений в Marzban.', 'info'),
+          metricCard('Активный триал', metrics.active_trials, 'Триальные подписки, срок которых еще не истек.', 'warn'),
+          metricCard('Триал закончился', metrics.expired_trials, 'Пользователи с завершенным пробным периодом.', 'danger'),
         ].join('')
 
-        const funnel = local.funnel || {}
-        document.getElementById('funnelBox').innerHTML = `
-          • /start всего: <b>${fmt(funnel.start_total)}</b><br>
-          • /get всего: <b>${fmt(funnel.get_total)}</b><br>
-          • Start→Get: <b>${fmt(funnel.start_to_get_pct)}%</b><br>
-          • Подключились (трафик > 0): <b>${fmt(usage.connected_users)}</b><br>
-          • Get→Connected: <b>${fmt(kpi.get_to_connected_pct)}%</b><br>
-          • Активны 3/7/14 дней: <b>${fmt(retention.active_3d_pct)}%</b> / <b>${fmt(retention.active_7d_pct)}%</b> / <b>${fmt(retention.active_14d_pct)}%</b>
-        `
-
-        document.getElementById('engagementBox').innerHTML = `
-          • Всего трафика: <b>${fmt(usage.total_traffic_gb)} GB</b><br>
-          • Средний трафик: <b>${fmt(usage.avg_traffic_gb)} GB</b><br>
-          • Медианный трафик: <b>${fmt(usage.median_traffic_gb)} GB</b><br>
-          • Активных VPN (Marzban status=active): <b>${fmt(usage.active_users)}</b><br>
-          • Пик online (по system): <b>${fmt(system.online_users)}</b><br>
-          • Среднее время первого подключения: <b>н/д</b> (нет тайм-серии)
-        `
-
-        const keywords = support.top_keywords || {}
-        const keywordsText = Object.entries(keywords).map(([k, v]) => `${k}: ${v}`).join(', ') || 'нет данных'
-        document.getElementById('qualityBox').innerHTML = `
-          • Новых тикетов сегодня: <b>${fmt(support.new_tickets_today)}</b><br>
-          • % тикетов от активных: <b>${fmt(support.ticket_rate_from_active_pct)}%</b><br>
-          • Среднее сообщений в тикете: <b>${fmt(support.avg_messages_per_ticket)}</b><br>
-          • % закрытых тикетов: <b>${fmt(support.closed_tickets_pct)}%</b><br>
-          • Открытых тикетов: <b>${fmt(support.open_tickets)}</b><br>
-          • Топ ключевые слова: <b>${keywordsText}</b>
-        `
-
-        document.getElementById('infraBox').innerHTML = `
-          • CPU: <b>${fmt(system.cpu_pct)}%</b><br>
-          • RAM: <b>${fmt(system.ram_pct)}%</b><br>
-          • Версия Marzban: <b>${fmt(system.version)}</b>
-        `
-        document.getElementById('metricsError').textContent = err ? `Marzban API: ${err}` : ''
+        const marzbanError = meta.marzban_error || ''
+        if (marzbanError) {
+          warning.style.display = 'block'
+          warning.textContent = `Некоторые данные могут быть неполными: ${marzbanError}`
+        } else {
+          warning.style.display = 'none'
+          warning.textContent = ''
+        }
       } catch (e) {
-        document.getElementById('metricsError').textContent = 'Ошибка загрузки метрик'
+        generatedAtEl.textContent = 'Сформировано: —'
+        warning.style.display = 'block'
+        warning.textContent = 'Ошибка загрузки метрик'
       }
     }
 
