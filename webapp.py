@@ -791,13 +791,16 @@ _ADMIN_APP_HTML = """<!doctype html>
     }
     input {
       flex: 1 1 260px;
+      width: 100%;
       min-width: 0;
+      min-height: 48px;
       border-radius: 14px;
       border: 1px solid rgba(106, 132, 172, 0.22);
       background: rgba(255, 255, 255, 0.82);
       color: var(--text);
       padding: 12px 14px;
       font: inherit;
+      line-height: 1.2;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
     }
     input::placeholder { color: #8a9ab5; }
