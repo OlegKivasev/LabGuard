@@ -932,6 +932,7 @@ _ADMIN_APP_HTML = """<!doctype html>
       .section-shell,
       .search-panel { padding: 16px; }
       .grid { grid-template-columns: 1fr; }
+      .search input { flex: none; }
       .actions button,
       .hero-actions button,
       .search button,
