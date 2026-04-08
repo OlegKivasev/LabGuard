@@ -1537,8 +1537,8 @@ _USER_APP_HTML = """<!doctype html>
   <div class="wrap">
     <div class="card hero">
       <div class="eyebrow">LabGuard</div>
-      <h1>Спокойный интерфейс для VPN</h1>
-      <div class="muted">Пользовательский экран и админка теперь собраны в одном светлом, аккуратном и визуально цельном стиле.</div>
+      <h1>VPN без лишних шагов</h1>
+      <div class="muted">Подключайся быстро, получай стабильный доступ и управляй подпиской в пару нажатий.</div>
       <div class="row" style="margin-top: 10px;">
         <button id="adminSwitchBtn" class="secondary" style="display:none">Перейти в админ-панель</button>
       </div>
