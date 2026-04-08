@@ -499,6 +499,7 @@ _ADMIN_APP_HTML = """<!doctype html>
     .metrics-head { margin: 2px 0 12px; }
     .metrics-title { margin: 0 0 4px; font-size: 20px; }
     .metrics-subtitle { margin: 0; font-size: 13px; opacity: .78; }
+    .metrics-meta { margin: 6px 0 0; font-size: 12px; }
     .metrics-warning {
       display: none;
       margin-bottom: 12px;
@@ -522,7 +523,42 @@ _ADMIN_APP_HTML = """<!doctype html>
       border: 1px solid rgba(83, 122, 205, 0.5);
       box-shadow: 0 8px 20px rgba(8, 14, 26, 0.4);
     }
+    #metricsSection {
+      background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+      border: 1px solid #d8e6ff;
+      border-radius: 16px;
+      padding: 12px;
+      color: #1e2b4a;
+    }
+    #metricsSection .metrics-title { color: #1c2a49; }
+    #metricsSection .metrics-subtitle,
+    #metricsSection .metrics-meta { color: #4f6288; opacity: 1; }
+    #metricsSection .metrics-warning {
+      background: #fff1f2;
+      border-color: #f9c5cb;
+      color: #8e2f3a;
+    }
+    .metrics-grid { margin-bottom: 0; }
+    #metricsSection .metric-card {
+      background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
+      border: 1px solid #d5e3ff;
+      box-shadow: 0 8px 18px rgba(133, 159, 211, 0.22);
+    }
+    .metric-caption {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.35;
+      color: #5b6f96;
+    }
+    .tone-primary { border-top: 3px solid #84a9ff !important; }
+    .tone-accent { border-top: 3px solid #7fa7f6 !important; }
+    .tone-success { border-top: 3px solid #89cfb0 !important; }
+    .tone-info { border-top: 3px solid #89bfdf !important; }
+    .tone-warn { border-top: 3px solid #edbe7f !important; }
+    .tone-danger { border-top: 3px solid #eca2a7 !important; }
     .k { font-size: 12px; opacity: .78; letter-spacing: 0.02em; }
+    #metricsSection .k { color: #5a6e96; opacity: 1; }
+    #metricsSection .v { color: #1e2c49; }
     .v { font-size: 28px; font-weight: 700; margin-top: 8px; color: #ffffff; }
     button { background: #2f6df6; color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
     button.red { background: #d94c4c; }
@@ -565,9 +601,10 @@ _ADMIN_APP_HTML = """<!doctype html>
       <div class="metrics-head">
         <h2 class="metrics-title">Ключевые метрики</h2>
         <p class="metrics-subtitle">Сводка по воронке, подключению и состоянию триалов.</p>
+        <p id="metricsGeneratedAt" class="metrics-meta">Сформировано: —</p>
       </div>
       <div id="metricsWarning" class="metrics-warning"></div>
-      <div class="grid" id="kpiGrid"></div>
+      <div class="grid metrics-grid" id="kpiGrid"></div>
     </section>
 
     <section id="usersSection" class="section">
@@ -644,8 +681,9 @@ _ADMIN_APP_HTML = """<!doctype html>
       return res.json()
     }
 
-    function metricCard(title, value) {
-      return `<div class="card metric-card"><div class="k">${title}</div><div class="v">${fmt(value)}</div></div>`
+    function metricCard(title, value, caption, tone) {
+      const toneClass = tone ? ` tone-${tone}` : ''
+      return `<div class="card metric-card${toneClass}"><div class="k">${title}</div><div class="v">${fmt(value)}</div><div class="metric-caption">${caption}</div></div>`
     }
     function setTabs(tab) {
       document.querySelectorAll('.tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab))
@@ -655,18 +693,20 @@ _ADMIN_APP_HTML = """<!doctype html>
 
     async function refreshMetrics() {
       const warning = document.getElementById('metricsWarning')
+      const generatedAtEl = document.getElementById('metricsGeneratedAt')
       try {
         const data = await loadMetrics()
         const metrics = data.metrics || {}
         const meta = data.meta || {}
+        generatedAtEl.textContent = `Сформировано: ${meta.generated_at || '—'}`
 
         document.getElementById('kpiGrid').innerHTML = [
-          metricCard('Нажали /start', metrics.start_users),
-          metricCard('Получили VPN ссылку', metrics.vpn_link_users),
-          metricCard('Подключили и потратили трафик', metrics.connected_users),
-          metricCard('Онлайн сейчас', metrics.online_now),
-          metricCard('Активный триал', metrics.active_trials),
-          metricCard('Триал закончился', metrics.expired_trials),
+          metricCard('Нажали /start', metrics.start_users, 'Уникальные пользователи, открывшие бота.', 'primary'),
+          metricCard('Получили VPN ссылку', metrics.vpn_link_users, 'Пользователи, дошедшие до выдачи ссылки.', 'accent'),
+          metricCard('Подключили и потратили трафик', metrics.connected_users, 'Есть подтвержденное подключение с трафиком.', 'success'),
+          metricCard('Онлайн сейчас', metrics.online_now, 'Текущее число активных подключений в Marzban.', 'info'),
+          metricCard('Активный триал', metrics.active_trials, 'Триальные подписки, срок которых еще не истек.', 'warn'),
+          metricCard('Триал закончился', metrics.expired_trials, 'Пользователи с завершенным пробным периодом.', 'danger'),
         ].join('')
 
         const marzbanError = meta.marzban_error || ''
@@ -678,6 +718,7 @@ _ADMIN_APP_HTML = """<!doctype html>
           warning.textContent = ''
         }
       } catch (e) {
+        generatedAtEl.textContent = 'Сформировано: —'
         warning.style.display = 'block'
         warning.textContent = 'Ошибка загрузки метрик'
       }
