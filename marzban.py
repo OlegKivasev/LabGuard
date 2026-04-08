@@ -61,10 +61,6 @@ class MarzbanClient:
 
         return await self._fetch_admin_token()
 
-    async def _auth_headers(self) -> dict[str, str]:
-        token = await self._get_bearer_token()
-        return {"Authorization": f"Bearer {token}"}
-
     async def _request_with_fallback(
         self,
         method: str,

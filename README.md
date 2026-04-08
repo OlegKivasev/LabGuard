@@ -20,13 +20,9 @@ On startup, the bot creates SQLite tables automatically if they do not exist.
 - `/start` registers user and logs event.
 - `/get` activates local 14-day trial timer in SQLite.
 - `/status` shows local trial status.
-- `/help` and `/apps` return setup instructions.
+- `/menu` opens the main menu and all onboarding actions are available there.
 - `/support <text>` creates a local support ticket.
 - Reminder scheduler runs every 6 hours and sends 3d/1d messages based on local expiry.
-
-## Smoke test
-
-- `py -m scripts.smoke_pre_api`
 
 ## Telegram integration (without Marzban API)
 
@@ -35,7 +31,7 @@ On startup, the bot creates SQLite tables automatically if they do not exist.
 3. Check config: `py bot.py --check-config`.
 4. Check Telegram API: `py bot.py --check-telegram`.
 5. Run bot: `py bot.py`.
-6. In Telegram test commands in order: `/start`, `/get`, `/status`, `/help`, `/apps`, `/support test`.
+6. In Telegram test commands in order: `/start`, `/menu`, `/get`, `/status`, `/support test`.
 
 On startup bot registers command menu in Telegram automatically.
 
