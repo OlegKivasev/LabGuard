@@ -472,53 +472,39 @@ _ADMIN_APP_HTML = """<!doctype html>
   <title>LabGuard Admin</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {
-      --bg-soft: #f3f6ff;
-      --bg-accent: #dff0ff;
-      --surface: rgba(255, 255, 255, 0.82);
-      --surface-strong: #ffffff;
-      --line: #d8e3f5;
-      --text: #17233b;
-      --muted: #56627a;
-      --primary: #3164d8;
-      --danger-soft: #fff0ef;
-      --danger-line: #f2c4bf;
-      --danger-text: #9a2d2d;
-    }
+    :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     body {
-      font-family: "Segoe UI", -apple-system, sans-serif;
+      font-family: -apple-system, Segoe UI, sans-serif;
       margin: 0;
-      min-height: 100vh;
-      background: radial-gradient(circle at 0% 0%, var(--bg-accent) 0%, var(--bg-soft) 45%, #eef2fb 100%);
-      color: var(--text);
+      background: #0f1420;
+      color: #e7eefc;
     }
-    .wrap { max-width: 1040px; margin: 0 auto; padding: 16px; }
+    .wrap { max-width: 1024px; margin: 0 auto; padding: 14px; }
     .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
     .head-actions { display: flex; gap: 8px; }
-    .title { margin: 0; font-size: 34px; }
+    .title { margin: 0; font-size: 36px; }
     .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
     .tab {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      color: var(--text);
+      background: #1b2334;
+      border: 1px solid #2a3550;
+      color: #e7eefc;
       border-radius: 999px;
-      padding: 8px 14px;
+      padding: 8px 12px;
       cursor: pointer;
-      font-weight: 600;
     }
-    .tab.active { background: var(--primary); border-color: var(--primary); color: #ffffff; }
+    .tab.active { background: #2f6df6; border-color: #2f6df6; }
     .section { display: none; }
     .section.active { display: block; }
     .metrics-head { margin: 2px 0 12px; }
     .metrics-title { margin: 0 0 4px; font-size: 20px; }
-    .metrics-subtitle { margin: 0; font-size: 13px; color: var(--muted); }
+    .metrics-subtitle { margin: 0; font-size: 13px; opacity: .78; }
     .metrics-warning {
       display: none;
       margin-bottom: 12px;
-      background: var(--danger-soft);
-      border: 1px solid var(--danger-line);
-      color: var(--danger-text);
+      background: rgba(217, 76, 76, 0.12);
+      border: 1px solid rgba(217, 76, 76, 0.35);
+      color: #ffd8d8;
       border-radius: 12px;
       padding: 10px 12px;
       font-size: 13px;
@@ -526,33 +512,37 @@ _ADMIN_APP_HTML = """<!doctype html>
     }
     .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
     .card {
-      background: linear-gradient(150deg, var(--surface-strong) 0%, var(--surface) 100%);
-      border: 1px solid var(--line);
+      background: #1b2334;
+      border: 1px solid #2a3550;
       border-radius: 14px;
       padding: 14px;
-      box-shadow: 0 8px 20px rgba(47, 74, 126, 0.08);
     }
-    .k { font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
-    .v { font-size: 28px; font-weight: 700; margin-top: 8px; color: #101c33; }
-    button { background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+    .metric-card {
+      background: linear-gradient(160deg, rgba(47, 109, 246, 0.17) 0%, rgba(27, 35, 52, 0.95) 65%);
+      border: 1px solid rgba(83, 122, 205, 0.5);
+      box-shadow: 0 8px 20px rgba(8, 14, 26, 0.4);
+    }
+    .k { font-size: 12px; opacity: .78; letter-spacing: 0.02em; }
+    .v { font-size: 28px; font-weight: 700; margin-top: 8px; color: #ffffff; }
+    button { background: #2f6df6; color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
     button.red { background: #d94c4c; }
     .search { display: flex; gap: 8px; margin-bottom: 12px; }
     input {
       flex: 1;
-      background: var(--surface-strong);
-      color: var(--text);
-      border: 1px solid var(--line);
+      background: #121a29;
+      color: #e7eefc;
+      border: 1px solid #2a3550;
       border-radius: 10px;
       padding: 8px 10px;
     }
     .table-wrap { width: 100%; overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; color: var(--text); }
-    th, td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; }
-    th { color: var(--muted); font-weight: 500; }
-    .muted { color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+    th, td { padding: 8px; border-bottom: 1px solid #2a3550; text-align: left; }
+    th { opacity: .75; font-weight: 500; }
+    .muted { opacity: .7; }
     .actions { display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
     .actions button { width: 100%; padding: 6px 10px; font-size: 12px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .title { font-size: 30px; } }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .title { font-size: 32px; } }
     @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -655,7 +645,7 @@ _ADMIN_APP_HTML = """<!doctype html>
     }
 
     function metricCard(title, value) {
-      return `<div class="card"><div class="k">${title}</div><div class="v">${fmt(value)}</div></div>`
+      return `<div class="card metric-card"><div class="k">${title}</div><div class="v">${fmt(value)}</div></div>`
     }
     function setTabs(tab) {
       document.querySelectorAll('.tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab))
