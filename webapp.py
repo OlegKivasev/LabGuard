@@ -532,245 +532,468 @@ _ADMIN_APP_HTML = """<!doctype html>
   <title>LabGuard Admin</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: light;
+      --bg: #eef4fb;
+      --bg-strong: #dfeaf8;
+      --surface: rgba(255, 255, 255, 0.84);
+      --surface-strong: #ffffff;
+      --surface-soft: #f4f8fd;
+      --line: rgba(129, 153, 189, 0.28);
+      --line-strong: rgba(104, 132, 176, 0.38);
+      --text: #203049;
+      --muted: #627493;
+      --accent: #3e6fd9;
+      --accent-soft: #e8f0ff;
+      --success: #2c8b63;
+      --success-soft: #e9f7f0;
+      --warn: #b9792c;
+      --warn-soft: #fff6e6;
+      --danger: #bf5a68;
+      --danger-soft: #fff0f2;
+      --shadow: 0 20px 48px rgba(56, 83, 125, 0.14);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+    }
     * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, Segoe UI, sans-serif;
       margin: 0;
-      background: #0f1420;
-      color: #e7eefc;
+      min-height: 100vh;
+      font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(132, 169, 255, 0.32), transparent 28%),
+        radial-gradient(circle at top right, rgba(157, 208, 196, 0.28), transparent 24%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 45%, #e8eff8 100%);
     }
-    .wrap { max-width: 1024px; margin: 0 auto; padding: 14px; }
-    .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-    .head-actions { display: flex; gap: 8px; }
-    .title { margin: 0; font-size: 36px; }
-    .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-    .tab {
-      background: #1b2334;
-      border: 1px solid #2a3550;
-      color: #e7eefc;
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: auto;
+      pointer-events: none;
+      z-index: 0;
       border-radius: 999px;
-      padding: 8px 12px;
-      cursor: pointer;
+      filter: blur(16px);
+      opacity: 0.7;
     }
-    .tab.active { background: #2f6df6; border-color: #2f6df6; }
+    body::before {
+      width: 240px;
+      height: 240px;
+      top: 64px;
+      right: -60px;
+      background: rgba(126, 171, 255, 0.18);
+    }
+    body::after {
+      width: 220px;
+      height: 220px;
+      bottom: 48px;
+      left: -44px;
+      background: rgba(140, 205, 190, 0.14);
+    }
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 18px 14px 28px;
+    }
+    .fade-up {
+      animation: fadeUp .42s ease both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+    .hero {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 22px;
+      margin-bottom: 14px;
+      background:
+        linear-gradient(140deg, rgba(255, 255, 255, 0.92) 0%, rgba(243, 248, 255, 0.82) 62%, rgba(231, 241, 255, 0.92) 100%);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(232, 240, 255, 0.92);
+      border: 1px solid rgba(95, 132, 199, 0.22);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .title {
+      margin: 12px 0 8px;
+      font-size: 34px;
+      line-height: 1.05;
+    }
+    .subtitle {
+      margin: 0;
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .hero-actions,
+    .tabs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button,
+    .tab {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease, color .18s ease, border-color .18s ease;
+    }
+    button:hover,
+    .tab:hover { transform: translateY(-1px); }
+    button:disabled { opacity: .58; cursor: default; transform: none; }
+    .btn-primary {
+      background: linear-gradient(135deg, #3e6fd9 0%, #5a8df2 100%);
+      color: #fff;
+      box-shadow: 0 14px 28px rgba(73, 110, 191, 0.24);
+    }
+    .btn-secondary,
+    .tab {
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--text);
+      border: 1px solid rgba(108, 134, 175, 0.22);
+      box-shadow: 0 10px 24px rgba(90, 115, 153, 0.08);
+    }
+    .btn-soft {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(96, 135, 206, 0.18);
+    }
+    .btn-danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+      border: 1px solid rgba(191, 90, 104, 0.16);
+    }
+    .tab.active {
+      background: linear-gradient(135deg, #3e6fd9 0%, #5a8df2 100%);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 14px 28px rgba(73, 110, 191, 0.22);
+    }
     .section { display: none; }
     .section.active { display: block; }
-    .metrics-head { margin: 2px 0 12px; }
-    .metrics-title { margin: 0 0 4px; font-size: 20px; }
-    .metrics-subtitle { margin: 0; font-size: 13px; opacity: .78; }
-    .metrics-meta { margin: 6px 0 0; font-size: 12px; }
-    .metrics-warning {
-      display: none;
-      margin-bottom: 12px;
-      background: rgba(217, 76, 76, 0.12);
-      border: 1px solid rgba(217, 76, 76, 0.35);
-      color: #ffd8d8;
-      border-radius: 12px;
-      padding: 10px 12px;
-      font-size: 13px;
-      line-height: 1.35;
+    .section-shell {
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(246,250,255,0.9) 100%);
     }
-    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
-    .card {
-      background: #1b2334;
-      border: 1px solid #2a3550;
-      border-radius: 14px;
-      padding: 14px;
+    .metrics-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .metrics-title,
+    .users-title {
+      margin: 0 0 4px;
+      font-size: 23px;
+    }
+    .metrics-subtitle,
+    .users-subtitle,
+    .metrics-meta,
+    .muted {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .metrics-warning,
+    .status-banner {
+      display: none;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--danger-soft);
+      border: 1px solid rgba(191, 90, 104, 0.18);
+      color: #9d4252;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
     }
     .metric-card {
-      background: linear-gradient(160deg, rgba(47, 109, 246, 0.17) 0%, rgba(27, 35, 52, 0.95) 65%);
-      border: 1px solid rgba(83, 122, 205, 0.5);
-      box-shadow: 0 8px 20px rgba(8, 14, 26, 0.4);
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(244,248,253,0.98) 100%);
+      border-radius: 20px;
+      border: 1px solid rgba(117, 147, 191, 0.16);
+      box-shadow: 0 16px 34px rgba(87, 113, 155, 0.11);
     }
-    #metricsSection {
-      background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
-      border: 1px solid #d8e6ff;
-      border-radius: 16px;
-      padding: 12px;
-      color: #1e2b4a;
+    .tone-primary { box-shadow: inset 0 0 0 1px rgba(132, 169, 255, 0.26), 0 16px 34px rgba(87, 113, 155, 0.11); }
+    .tone-accent { box-shadow: inset 0 0 0 1px rgba(94, 139, 219, 0.26), 0 16px 34px rgba(87, 113, 155, 0.11); }
+    .tone-success { box-shadow: inset 0 0 0 1px rgba(72, 155, 118, 0.26), 0 16px 34px rgba(87, 113, 155, 0.11); }
+    .tone-info { box-shadow: inset 0 0 0 1px rgba(92, 157, 184, 0.26), 0 16px 34px rgba(87, 113, 155, 0.11); }
+    .tone-warn { box-shadow: inset 0 0 0 1px rgba(201, 149, 82, 0.24), 0 16px 34px rgba(87, 113, 155, 0.11); }
+    .tone-danger { box-shadow: inset 0 0 0 1px rgba(191, 90, 104, 0.22), 0 16px 34px rgba(87, 113, 155, 0.11); }
+    .k {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-weight: 700;
     }
-    #metricsSection .metrics-title { color: #1c2a49; }
-    #metricsSection .metrics-subtitle,
-    #metricsSection .metrics-meta { color: #4f6288; opacity: 1; }
-    #metricsSection .metrics-warning {
-      background: #fff1f2;
-      border-color: #f9c5cb;
-      color: #8e2f3a;
-    }
-    .metrics-grid { margin-bottom: 0; }
-    #metricsSection .metric-card {
-      background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
-      border: 1px solid #d5e3ff;
-      box-shadow: 0 8px 18px rgba(133, 159, 211, 0.22);
+    .v {
+      margin-top: 14px;
+      font-size: 34px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--text);
     }
     .metric-caption {
-      margin-top: 8px;
-      font-size: 12px;
-      line-height: 1.35;
-      color: #5b6f96;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
     }
-    .tone-primary { border-top: 3px solid #84a9ff !important; }
-    .tone-accent { border-top: 3px solid #7fa7f6 !important; }
-    .tone-success { border-top: 3px solid #89cfb0 !important; }
-    .tone-info { border-top: 3px solid #89bfdf !important; }
-    .tone-warn { border-top: 3px solid #edbe7f !important; }
-    .tone-danger { border-top: 3px solid #eca2a7 !important; }
-    .k { font-size: 12px; opacity: .78; letter-spacing: 0.02em; }
-    #metricsSection .k { color: #5a6e96; opacity: 1; }
-    #metricsSection .v { color: #1e2c49; }
-    .v { font-size: 28px; font-weight: 700; margin-top: 8px; color: #ffffff; }
-    button { background: #2f6df6; color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
-    button.red { background: #d94c4c; }
-    .search { display: flex; gap: 8px; margin-bottom: 12px; }
+    .users-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .search-panel,
+    .users-list-card {
+      padding: 18px;
+    }
+    .search {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
     input {
-      flex: 1;
-      background: #121a29;
-      color: #e7eefc;
-      border: 1px solid #2a3550;
-      border-radius: 10px;
-      padding: 8px 10px;
+      flex: 1 1 260px;
+      min-width: 0;
+      border-radius: 14px;
+      border: 1px solid rgba(106, 132, 172, 0.22);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--text);
+      padding: 12px 14px;
+      font: inherit;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
     }
-    th { opacity: .75; font-weight: 500; }
-    .muted { opacity: .7; }
-    .actions { display: flex; flex-direction: column; gap: 6px; min-width: 132px; }
-    .actions button { width: 100%; padding: 6px 10px; font-size: 12px; }
-    #usersSection {
-      background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
-      border: 1px solid #d8e6ff;
-      border-radius: 16px;
-      padding: 12px;
-      color: #1e2b4a;
-    }
+    input::placeholder { color: #8a9ab5; }
     #usersSection .card {
-      background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
-      border: 1px solid #d5e3ff;
-      box-shadow: 0 8px 18px rgba(133, 159, 211, 0.16);
-    }
-    #usersSection input {
-      background: #ffffff;
-      color: #243656;
-      border: 1px solid #cfe0ff;
+      background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(244,248,253,0.96) 100%);
+      border: 1px solid rgba(117, 147, 191, 0.16);
+      box-shadow: 0 16px 34px rgba(87, 113, 155, 0.11);
     }
     .users-alert {
       display: none;
-      margin-bottom: 12px;
-      border-radius: 12px;
-      padding: 10px 12px;
+      margin: 14px 0 0;
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
       font-size: 13px;
-      line-height: 1.35;
+      line-height: 1.45;
     }
-    .users-alert.info { display: block; background: #eef5ff; border: 1px solid #cdddff; color: #29406d; }
-    .users-alert.success { display: block; background: #edf9f2; border: 1px solid #caead7; color: #24533a; }
-    .users-alert.warn { display: block; background: #fff4e7; border: 1px solid #f3d8a9; color: #80531e; }
-    .users-alert.error { display: block; background: #fff1f2; border: 1px solid #f4c7cd; color: #8f2b37; }
-    .user-list { display: flex; flex-direction: column; gap: 10px; }
+    .users-alert.info { display: block; background: var(--accent-soft); border: 1px solid rgba(94, 139, 219, 0.16); color: #29406d; }
+    .users-alert.success { display: block; background: var(--success-soft); border: 1px solid rgba(44, 139, 99, 0.16); color: #24533a; }
+    .users-alert.warn { display: block; background: var(--warn-soft); border: 1px solid rgba(185, 121, 44, 0.16); color: #80531e; }
+    .users-alert.error { display: block; background: var(--danger-soft); border: 1px solid rgba(191, 90, 104, 0.16); color: #8f2b37; }
+    .user-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
     .user-row {
       width: 100%;
-      border: 1px solid #d8e5ff;
-      background: #ffffff;
-      border-radius: 14px;
-      padding: 14px;
+      border: 1px solid rgba(117, 147, 191, 0.16);
+      background: rgba(255, 255, 255, 0.82);
+      border-radius: 18px;
+      padding: 16px;
       text-align: left;
-      color: #1f3152;
+      color: var(--text);
       cursor: pointer;
-      box-shadow: 0 6px 16px rgba(143, 166, 210, 0.12);
+      box-shadow: 0 12px 28px rgba(87, 113, 155, 0.1);
     }
-    .user-row:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(143, 166, 210, 0.18); }
-    .user-row-head, .user-detail-head, .detail-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-    .user-row-id, .detail-username { font-size: 18px; font-weight: 700; color: #1d2f4e; }
-    .user-row-meta, .detail-subtitle { margin-top: 4px; font-size: 13px; color: #60759e; }
+    .user-row:hover { transform: translateY(-1px); box-shadow: 0 16px 32px rgba(87, 113, 155, 0.16); }
+    .user-row-head,
+    .user-detail-head,
+    .detail-topline,
+    .inline-form-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .user-row-id,
+    .detail-username { font-size: 18px; font-weight: 700; color: var(--text); }
+    .user-row-meta,
+    .detail-subtitle { margin-top: 4px; font-size: 13px; color: var(--muted); }
     .badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      border-radius: 999px;
       padding: 6px 10px;
+      border-radius: 999px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
     }
-    .badge.success { background: #edf8f1; color: #246245; border: 1px solid #cce8d7; }
-    .badge.danger { background: #fff1f2; color: #8c3440; border: 1px solid #f0c7cd; }
-    .badge.info { background: #eef5ff; color: #2f4f88; border: 1px solid #d3e2ff; }
-    .detail-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 12px;
+    .badge-success {
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid rgba(44, 139, 99, 0.14);
     }
+    .badge-muted {
+      background: rgba(233, 239, 248, 0.88);
+      color: #647692;
+      border: 1px solid rgba(114, 137, 169, 0.14);
+    }
+    .badge-warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+      border: 1px solid rgba(185, 121, 44, 0.14);
+    }
+    .badge-info {
+      background: var(--accent-soft);
+      color: #2f4f88;
+      border: 1px solid rgba(94, 139, 219, 0.16);
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .actions button {
+      padding: 8px 12px;
+      font-size: 12px;
+      box-shadow: none;
+    }
+    .detail-layout { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; margin-top: 14px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
     .detail-field {
-      padding: 12px;
-      border: 1px solid #d9e5fb;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.82);
+      padding: 14px;
+      border: 1px solid rgba(121, 147, 186, 0.16);
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.78);
     }
-    .detail-label { font-size: 12px; color: #667aa1; margin-bottom: 6px; }
-    .detail-value { font-size: 15px; font-weight: 600; color: #1f3150; }
-    .detail-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
-    .secondary-button { background: #edf3ff; color: #2e4f84; border: 1px solid #d0def8; }
-    .warn-button { background: #fff1de; color: #83501d; border: 1px solid #f0d3a8; }
-    .ghost-button { background: transparent; color: #406398; border: 1px solid #d2dff6; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    .inline-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dbe6fa; }
-    .inline-form[hidden] { display: none; }
-    .inline-form-actions { display: flex; gap: 8px; margin-top: 10px; }
-    .empty-state {
-      border: 1px dashed #c9daf8;
-      border-radius: 14px;
-      padding: 22px 16px;
-      text-align: center;
-      color: #61769f;
+    .detail-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+    .detail-value { font-size: 15px; font-weight: 700; color: var(--text); }
+    .secondary-button,
+    .ghost-button {
       background: rgba(255, 255, 255, 0.72);
+      color: var(--text);
+      border: 1px solid rgba(108, 134, 175, 0.22);
+      box-shadow: 0 10px 24px rgba(90, 115, 153, 0.08);
     }
-    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .title { font-size: 32px; } }
-    @media (max-width: 820px) { .detail-layout { grid-template-columns: 1fr; } .detail-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } .user-row-head, .user-detail-head, .detail-topline, .search, .inline-form-actions { flex-direction: column; } button { width: 100%; } }
+    .warn-button {
+      background: var(--warn-soft);
+      color: var(--warn);
+      border: 1px solid rgba(185, 121, 44, 0.16);
+      box-shadow: none;
+    }
+    .inline-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(121, 147, 186, 0.16); }
+    .inline-form[hidden] { display: none; }
+    .empty-state {
+      padding: 22px;
+      text-align: center;
+      color: var(--muted);
+      background: linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(245,249,255,0.96) 100%);
+      border: 1px dashed rgba(116, 144, 186, 0.28);
+      border-radius: 18px;
+    }
+    @media (max-width: 920px) {
+      .hero,
+      .metrics-head { flex-direction: column; align-items: stretch; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .title { font-size: 30px; }
+    }
+    @media (max-width: 820px) {
+      .detail-layout,
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding-left: 12px; padding-right: 12px; }
+      .hero,
+      .section-shell,
+      .search-panel { padding: 16px; }
+      .grid { grid-template-columns: 1fr; }
+      .actions button,
+      .hero-actions button,
+      .search button,
+      .tabs button,
+      .inline-form-actions button,
+      .ghost-button { width: 100%; justify-content: center; }
+      .user-row-head,
+      .user-detail-head,
+      .detail-topline,
+      .search,
+      .inline-form-actions { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="head">
-      <h1 class="title">LabGuard Admin</h1>
-      <div class="head-actions">
-        <button id="backToUserBtn" style="display:none">В пользовательское приложение</button>
-        <button id="refreshBtn">Обновить</button>
+  <div class="wrap fade-up">
+    <header class="hero card">
+      <div>
+        <div class="eyebrow">LabGuard Admin</div>
+        <h1 class="title">Единая панель управления</h1>
+        <p class="subtitle">Метрики, пользователи и действия администратора собраны в одном спокойном, светлом и аккуратном интерфейсе.</p>
       </div>
-    </div>
+      <div class="hero-actions">
+        <button id="backToUserBtn" class="btn-secondary" style="display:none">В приложение пользователя</button>
+        <button id="refreshBtn" class="btn-primary">Обновить данные</button>
+      </div>
+    </header>
 
-    <div class="tabs">
+    <div class="tabs" style="margin-bottom: 14px;">
       <button class="tab active" data-tab="metrics">Метрика</button>
       <button class="tab" data-tab="users">Пользователи</button>
     </div>
 
-    <section id="metricsSection" class="section active">
-      <div class="metrics-head">
-        <h2 class="metrics-title">Ключевые метрики</h2>
-        <p class="metrics-subtitle">Сводка по воронке, подключению и состоянию триалов.</p>
-        <p id="metricsGeneratedAt" class="metrics-meta">Сформировано: —</p>
+    <section id="metricsSection" class="section active fade-up">
+      <div class="card section-shell">
+        <div class="metrics-head">
+          <div>
+            <h2 class="metrics-title">Ключевые метрики</h2>
+            <p class="metrics-subtitle">Сводка по воронке, подключениям и текущему состоянию пробных периодов.</p>
+          </div>
+          <p id="metricsGeneratedAt" class="metrics-meta">Сформировано: —</p>
+        </div>
+        <div id="metricsWarning" class="metrics-warning"></div>
+        <div class="grid metrics-grid" id="kpiGrid"></div>
       </div>
-      <div id="metricsWarning" class="metrics-warning"></div>
-      <div class="grid metrics-grid" id="kpiGrid"></div>
     </section>
 
-    <section id="usersSection" class="section">
-      <div class="metrics-head">
-        <h2 class="metrics-title">Пользователи</h2>
-        <p class="metrics-subtitle">Поиск, карточка пользователя и управление сроком пробного периода в едином стиле админки.</p>
-      </div>
-      <div class="card">
-        <div class="search">
-          <input id="searchInput" placeholder="Поиск по username или Telegram ID" />
-          <button id="searchBtn">Найти</button>
-        </div>
-        <div id="usersFlash" class="users-alert"></div>
-        <div id="userListSection">
-          <div id="userList" class="user-list"></div>
-          <div class="muted" id="usersHint" style="margin-top:10px"></div>
-        </div>
-        <div id="userDetailSection" hidden>
-          <button id="backToListBtn" class="ghost-button">← Назад к списку</button>
-          <div id="userDetailBody" style="margin-top:12px"></div>
+    <section id="usersSection" class="section fade-up">
+      <div class="users-shell">
+        <div class="card search-panel">
+          <h2 class="users-title">Пользователи</h2>
+          <p class="users-subtitle">Поиск, карточка пользователя и управление сроком пробного периода в одном спокойном интерфейсе.</p>
+          <div class="search">
+            <input id="searchInput" placeholder="Поиск по username или Telegram ID" />
+            <button id="searchBtn" class="btn-primary">Найти</button>
+          </div>
+          <div id="usersFlash" class="users-alert"></div>
+          <div id="userListSection">
+            <div id="userList" class="user-list"></div>
+            <div class="muted" id="usersHint" style="margin-top:10px"></div>
+          </div>
+          <div id="userDetailSection" hidden>
+            <button id="backToListBtn" class="ghost-button">← Назад к списку</button>
+            <div id="userDetailBody" style="margin-top:12px"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -845,13 +1068,13 @@ _ADMIN_APP_HTML = """<!doctype html>
 
     function escapeHtml(value) {
       return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
     }
-    function badgeClass(active) { return active ? 'success' : 'danger' }
+    function badgeClass(active) { return active ? 'badge-success' : 'badge-muted' }
     function trialLabel(active) { return active ? 'Активен' : 'Неактивен' }
     function onlineLabel(status) {
       if (status === 'online') return 'Да'
@@ -921,7 +1144,7 @@ _ADMIN_APP_HTML = """<!doctype html>
             <div class="actions">
               <button data-action="edit-trial" data-id="${user.telegram_id}">Изменить дату подписки</button>
               <button class="warn-button" data-action="deactivate" data-id="${user.telegram_id}">Деактивировать</button>
-              <button class="red" data-action="delete" data-id="${user.telegram_id}">Удалить</button>
+              <button class="btn-danger" data-action="delete" data-id="${user.telegram_id}">Удалить</button>
             </div>
             <div id="trialEditor" class="inline-form" hidden>
               <div class="detail-label">Дата окончания пробного периода</div>
@@ -939,7 +1162,7 @@ _ADMIN_APP_HTML = """<!doctype html>
 
     function metricCard(title, value, caption, tone) {
       const toneClass = tone ? ` tone-${tone}` : ''
-      return `<div class="card metric-card${toneClass}"><div class="k">${title}</div><div class="v">${fmt(value)}</div><div class="metric-caption">${caption}</div></div>`
+      return `<div class="metric-card${toneClass}"><div class="k">${title}</div><div class="v">${fmt(value)}</div><div class="metric-caption">${caption}</div></div>`
     }
     function setTabs(tab) {
       document.querySelectorAll('.tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab))
@@ -1108,77 +1331,225 @@ _USER_APP_HTML = """<!doctype html>
   <title>LabGuard</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: light;
+      --bg: #eef4fb;
+      --surface: rgba(255, 255, 255, 0.84);
+      --surface-strong: #ffffff;
+      --surface-soft: #f4f8fd;
+      --line: rgba(129, 153, 189, 0.28);
+      --text: #203049;
+      --muted: #627493;
+      --accent: #3e6fd9;
+      --accent-soft: #e8f0ff;
+      --success: #2c8b63;
+      --success-soft: #e9f7f0;
+      --warn: #b9792c;
+      --warn-soft: #fff6e6;
+      --danger: #bf5a68;
+      --danger-soft: #fff0f2;
+      --shadow: 0 20px 48px rgba(56, 83, 125, 0.14);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, Segoe UI, sans-serif;
-      background: radial-gradient(circle at top, #1f2937 0%, #0b1020 60%, #070b14 100%);
-      color: #e5ecff;
+      min-height: 100vh;
+      font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(132, 169, 255, 0.3), transparent 30%),
+        radial-gradient(circle at top right, rgba(157, 208, 196, 0.22), transparent 26%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 50%, #e8eff8 100%);
     }
-    .wrap { max-width: 680px; margin: 0 auto; padding: 14px; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 18px 14px 28px; }
     .card {
-      background: rgba(19, 28, 48, 0.86);
-      border: 1px solid #2b3859;
-      border-radius: 16px;
-      padding: 14px;
-      margin-bottom: 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
     }
-    h1 { margin: 0 0 8px; font-size: 28px; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
-    .muted { opacity: .78; font-size: 13px; }
-    .status { font-size: 16px; margin: 6px 0; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .hero {
+      padding: 22px;
+      background: linear-gradient(140deg, rgba(255,255,255,0.94) 0%, rgba(243,248,255,0.82) 62%, rgba(231,241,255,0.92) 100%);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(232, 240, 255, 0.92);
+      color: var(--accent);
+      border: 1px solid rgba(95, 132, 199, 0.22);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 12px 0 8px; font-size: 32px; line-height: 1.05; }
+    h2 { margin: 0 0 8px; font-size: 22px; }
+    .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
     button {
       border: 0;
-      border-radius: 10px;
-      padding: 10px 12px;
-      background: #2563eb;
+      border-radius: 999px;
+      padding: 11px 16px;
+      background: linear-gradient(135deg, #3e6fd9 0%, #5a8df2 100%);
       color: #fff;
       cursor: pointer;
       font-weight: 600;
+      font: inherit;
+      box-shadow: 0 14px 28px rgba(73, 110, 191, 0.22);
+      transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
     }
-    button.secondary { background: #334155; }
+    button:hover { transform: translateY(-1px); }
+    button.secondary {
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--text);
+      border: 1px solid rgba(108, 134, 175, 0.22);
+      box-shadow: 0 10px 24px rgba(90, 115, 153, 0.08);
+    }
     button:disabled { opacity: .6; cursor: default; }
+    .status-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(244,248,253,0.98) 100%);
+    }
+    .status-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .status { font-size: 28px; font-weight: 800; line-height: 1.05; margin: 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-active {
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid rgba(44, 139, 99, 0.14);
+    }
+    .badge-inactive {
+      background: rgba(233, 239, 248, 0.88);
+      color: #647692;
+      border: 1px solid rgba(114, 137, 169, 0.14);
+    }
+    .badge-warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+      border: 1px solid rgba(185, 121, 44, 0.14);
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .meta-item {
+      padding: 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(121, 147, 186, 0.16);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .meta-label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+    .meta-value {
+      margin-top: 6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-word;
+    }
     .sub-link {
       font-size: 13px;
       word-break: break-all;
-      padding: 8px;
-      border-radius: 10px;
-      background: #0f172a;
-      border: 1px solid #334155;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(106, 132, 172, 0.22);
       flex: 1;
       min-width: 0;
+      color: var(--text);
     }
-    .sub-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .sub-row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
     .icon-btn {
-      width: 38px;
-      min-width: 38px;
-      height: 38px;
+      width: 42px;
+      min-width: 42px;
+      height: 42px;
       padding: 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       font-size: 17px;
     }
-    .alert { margin-top: 8px; font-size: 13px; color: #fca5a5; }
-    .ok { color: #93c5fd; }
+    .alert {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #9d4252;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--danger-soft);
+      border: 1px solid rgba(191, 90, 104, 0.16);
+      display: none;
+    }
+    .support-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    @media (max-width: 640px) {
+      .wrap { padding-left: 12px; padding-right: 12px; }
+      .hero,
+      .card { padding: 16px; }
+      h1 { font-size: 28px; }
+      .status-top { flex-direction: column; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .row button,
+      .sub-row button { width: 100%; }
+      .sub-row { flex-direction: column; align-items: stretch; }
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="card">
-      <h1>LabGuard</h1>
-      <div class="muted">Управление VPN в одном окне</div>
+    <div class="card hero">
+      <div class="eyebrow">LabGuard</div>
+      <h1>Спокойный интерфейс для VPN</h1>
+      <div class="muted">Пользовательский экран и админка теперь собраны в одном светлом, аккуратном и визуально цельном стиле.</div>
       <div class="row" style="margin-top: 10px;">
         <button id="adminSwitchBtn" class="secondary" style="display:none">Перейти в админ-панель</button>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Статус</h2>
-      <div id="statusText" class="status">Загружаем...</div>
-      <div id="statusMeta" class="muted"></div>
+    <div class="card status-card">
+      <div class="status-top">
+        <div>
+          <h2>Статус подписки</h2>
+          <p class="muted">Актуальное состояние доступа, срок действия и расход трафика в одном блоке.</p>
+        </div>
+        <div id="statusBadge" class="badge badge-inactive">Проверяем статус</div>
+      </div>
+      <p id="statusText" class="status">Загружаем...</p>
+      <div id="statusMeta" class="meta-grid"></div>
       <div id="statusError" class="alert"></div>
       <div class="row" style="margin-top: 10px;">
         <button id="getVpnBtn">Получить VPN</button>
@@ -1192,10 +1563,11 @@ _USER_APP_HTML = """<!doctype html>
 
     <div class="card">
       <h2>Поддержка</h2>
+      <div class="muted">Если нужен доступ, продление или помощь с настройкой, здесь самый короткий путь к оператору.</div>
       <div class="row" style="margin-top: 10px;">
         <button id="supportLinkBtn">Открыть бота поддержки</button>
       </div>
-      <div id="supportInfo" class="muted" style="margin-top: 8px;">Раздел поддержки в приложении скоро появится.</div>
+      <div id="supportInfo" class="support-note">Раздел поддержки в приложении скоро появится.</div>
     </div>
   </div>
 
@@ -1222,24 +1594,29 @@ _USER_APP_HTML = """<!doctype html>
     function renderStatus(data) {
       const statusText = document.getElementById('statusText')
       const statusMeta = document.getElementById('statusMeta')
+      const statusBadge = document.getElementById('statusBadge')
       const getBtn = document.getElementById('getVpnBtn')
       const refreshBtn = document.getElementById('refreshBtn')
+      const trafficText = formatTraffic(data.consumed_traffic_gb)
 
       if (data.subscription_url) showSubscription(data.subscription_url)
       else showSubscription('')
 
       if (data.is_active) {
-        statusText.textContent = 'Активен'
-        statusText.classList.add('ok')
-        statusMeta.innerHTML = `Осталось: ${data.remaining_days} дн. До: ${data.expires_at} UTC<br>Трафик: ${formatTraffic(data.consumed_traffic_gb)}`
+        statusText.textContent = 'VPN активен'
+        statusBadge.textContent = 'Активен'
+        statusBadge.className = 'badge badge-active'
+        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Осталось</div><div class="meta-value">${data.remaining_days} дн.</div></div><div class="meta-item"><div class="meta-label">Действует до</div><div class="meta-value">${data.expires_at || '—'} UTC</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div><div class="meta-item"><div class="meta-label">Доступ</div><div class="meta-value">Подписка уже активирована</div></div>`
       } else if (data.trial_used) {
         statusText.textContent = 'Триал завершен'
-        statusText.classList.remove('ok')
-        statusMeta.innerHTML = `Повторная выдача недоступна. Напиши в поддержку.<br>Трафик: ${formatTraffic(data.consumed_traffic_gb)}`
+        statusBadge.textContent = 'Нужна поддержка'
+        statusBadge.className = 'badge badge-warn'
+        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Статус</div><div class="meta-value">Повторная выдача недоступна</div></div><div class="meta-item"><div class="meta-label">Следующий шаг</div><div class="meta-value">Напиши в поддержку для продления</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div><div class="meta-item"><div class="meta-label">Подписка</div><div class="meta-value">Можно запросить помощь у администратора</div></div>`
       } else {
-        statusText.textContent = 'Не активирован'
-        statusText.classList.remove('ok')
-        statusMeta.innerHTML = 'Нажми «Получить VPN», чтобы активировать подписку.'
+        statusText.textContent = 'Подписка еще не активирована'
+        statusBadge.textContent = 'Ожидает активации'
+        statusBadge.className = 'badge badge-inactive'
+        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Состояние</div><div class="meta-value">Триал еще не запускался</div></div><div class="meta-item"><div class="meta-label">Следующий шаг</div><div class="meta-value">Нажми «Получить VPN» для активации</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div><div class="meta-item"><div class="meta-label">Подписка</div><div class="meta-value">Ссылка появится сразу после выдачи</div></div>`
       }
 
       if (data.trial_used) {
@@ -1283,21 +1660,26 @@ _USER_APP_HTML = """<!doctype html>
     }
 
     async function loadStatus() {
-      document.getElementById('statusError').textContent = ''
+      const error = document.getElementById('statusError')
+      error.textContent = ''
+      error.style.display = 'none'
       try {
         const res = await fetch(withAuth('/app/api/status'), { headers: authHeaders() })
         if (!res.ok) throw new Error('status_failed')
         const data = await res.json()
         renderStatus(data)
       } catch (e) {
-        document.getElementById('statusError').textContent = 'Не удалось загрузить статус. Открой приложение из Telegram.'
+        error.textContent = 'Не удалось загрузить статус. Открой приложение из Telegram.'
+        error.style.display = 'block'
       }
     }
 
     async function getVpn() {
       const btn = document.getElementById('getVpnBtn')
       btn.disabled = true
-      document.getElementById('statusError').textContent = ''
+      const error = document.getElementById('statusError')
+      error.textContent = ''
+      error.style.display = 'none'
       try {
         const res = await fetch(withAuth('/app/api/get-vpn'), { method: 'POST', headers: authHeaders() })
         const data = await res.json()
@@ -1307,7 +1689,8 @@ _USER_APP_HTML = """<!doctype html>
         if (data.subscription_url) showSubscription(data.subscription_url)
         await loadStatus()
       } catch (e) {
-        document.getElementById('statusError').textContent = String(e.message || e)
+        error.textContent = String(e.message || e)
+        error.style.display = 'block'
       } finally {
         btn.disabled = false
       }
@@ -1334,9 +1717,13 @@ _USER_APP_HTML = """<!doctype html>
       if (!latestSubscriptionUrl) return
       try {
         await navigator.clipboard.writeText(latestSubscriptionUrl)
-        document.getElementById('statusError').textContent = 'Ссылка скопирована'
+        const error = document.getElementById('statusError')
+        error.textContent = 'Ссылка скопирована'
+        error.style.display = 'block'
       } catch (e) {
-        document.getElementById('statusError').textContent = latestSubscriptionUrl
+        const error = document.getElementById('statusError')
+        error.textContent = latestSubscriptionUrl
+        error.style.display = 'block'
       }
     })
 
