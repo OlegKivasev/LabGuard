@@ -313,6 +313,11 @@ class StubMarzbanForMiniApp:
         }
 
 
+class FailingGetUserMarzbanForMiniApp(StubMarzbanForMiniApp):
+    async def get_user(self, username: str):
+        raise RuntimeError("boom")
+
+
 class MiniAppApiTests(unittest.TestCase):
     def setUp(self) -> None:
         from webapp import build_app
@@ -344,3 +349,25 @@ class MiniAppApiTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         status_payload = status.json()
         self.assertEqual(status_payload["subscription_url"], payload["subscription_url"])
+
+    def test_miniapp_get_vpn_handles_existing_user_lookup_failure(self) -> None:
+        from webapp import build_app
+
+        self.client.close()
+        self.marzban = FailingGetUserMarzbanForMiniApp()
+        app = build_app(self.db, StubSettings(), self.marzban, bot=self.bot)
+        self.client = TestClient(app)
+
+        self.db.create_user_if_not_exists(telegram_id=1001, username="demo_user")
+        self.db.set_marzban_binding(
+            telegram_id=1001,
+            marzban_id="labguard_demo_user",
+            expires_at="2099-01-01 00:00:00",
+        )
+
+        activation = self.client.post("/app/api/get-vpn")
+
+        self.assertEqual(activation.status_code, 200)
+        payload = activation.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], "already_active")
