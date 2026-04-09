@@ -22,6 +22,33 @@ async def _create_support_topic(bot, db: Database, forum_chat_id: int, telegram_
     return message_thread_id
 
 
+async def _send_support_topic_header(
+    bot,
+    forum_chat_id: int,
+    message_thread_id: int,
+    username_text: str,
+    telegram_id: int,
+) -> None:
+    await bot.send_message(
+        chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        text=f"Пользователь: {username_text}\nTelegram ID: {telegram_id}",
+    )
+
+
+async def _send_support_user_text(
+    bot,
+    forum_chat_id: int,
+    message_thread_id: int,
+    text: str,
+) -> None:
+    await bot.send_message(
+        chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        text=text,
+    )
+
+
 def _is_admin(message: Message, settings: Settings) -> bool:
     if message.from_user is None:
         return False
@@ -46,6 +73,7 @@ async def forward_user_message_to_admin(
     ticket_id = db.create_ticket(telegram_id, text)
     username_text = f"@{username}" if username else "без username"
     topic = db.get_support_topic_by_telegram_id(telegram_id)
+    is_new_topic = topic is None
     if topic is None:
         message_thread_id = await _create_support_topic(
             bot=bot,
@@ -59,14 +87,19 @@ async def forward_user_message_to_admin(
         message_thread_id = int(topic["message_thread_id"])
 
     try:
-        await bot.send_message(
-            chat_id=forum_chat_id,
+        if is_new_topic:
+            await _send_support_topic_header(
+                bot=bot,
+                forum_chat_id=forum_chat_id,
+                message_thread_id=message_thread_id,
+                username_text=username_text,
+                telegram_id=telegram_id,
+            )
+        await _send_support_user_text(
+            bot=bot,
+            forum_chat_id=forum_chat_id,
             message_thread_id=message_thread_id,
-            text=(
-                f"Пользователь: {username_text}\n"
-                f"Telegram ID: {telegram_id}\n\n"
-                f"{text}"
-            ),
+            text=text,
         )
     except TelegramBadRequest:
         if topic is None:
@@ -79,14 +112,18 @@ async def forward_user_message_to_admin(
             username_text=username_text,
             ticket_id=ticket_id,
         )
-        await bot.send_message(
-            chat_id=forum_chat_id,
+        await _send_support_topic_header(
+            bot=bot,
+            forum_chat_id=forum_chat_id,
             message_thread_id=message_thread_id,
-            text=(
-                f"Пользователь: {username_text}\n"
-                f"Telegram ID: {telegram_id}\n\n"
-                f"{text}"
-            ),
+            username_text=username_text,
+            telegram_id=telegram_id,
+        )
+        await _send_support_user_text(
+            bot=bot,
+            forum_chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            text=text,
         )
     return ticket_id
 

@@ -84,6 +84,7 @@ class SupportTopicRecoveryTests(unittest.IsolatedAsyncioTestCase):
         bot.send_message.side_effect = [
             TelegramBadRequest("thread not found"),
             None,
+            None,
         ]
         settings = type("S", (), {"support_forum_chat_id": -100555})()
 
@@ -107,7 +108,13 @@ class SupportTopicRecoveryTests(unittest.IsolatedAsyncioTestCase):
             message_thread_id=777,
             ticket_id=42,
         )
-        self.assertEqual(bot.send_message.await_count, 2)
+        self.assertEqual(bot.send_message.await_count, 3)
+        first_call = bot.send_message.await_args_list[0].kwargs
+        second_call = bot.send_message.await_args_list[1].kwargs
+        third_call = bot.send_message.await_args_list[2].kwargs
+        self.assertEqual(first_call["text"], "Не работает VPN")
+        self.assertEqual(second_call["text"], "Пользователь: @demo_user\nTelegram ID: 123456789")
+        self.assertEqual(third_call["text"], "Не работает VPN")
 
 
 if __name__ == "__main__":

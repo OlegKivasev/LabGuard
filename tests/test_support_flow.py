@@ -83,7 +83,7 @@ class VpnIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_forward_user_message_to_admin_posts_plain_message_without_profile_button(self) -> None:
+    async def test_forward_user_message_to_admin_creates_topic_and_sends_header_then_text(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
@@ -111,17 +111,16 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             message_thread_id=321,
             ticket_id=17,
         )
-        bot.send_message.assert_awaited_once()
-        kwargs = bot.send_message.await_args.kwargs
-        self.assertEqual(kwargs["chat_id"], -100555)
-        self.assertEqual(kwargs["message_thread_id"], 321)
-        self.assertEqual(
-            kwargs["text"],
-            "Пользователь: @demo_user\n"
-            "Telegram ID: 123456789\n\n"
-            "Не работает VPN",
-        )
-        self.assertNotIn("reply_markup", kwargs)
+        self.assertEqual(bot.send_message.await_count, 2)
+        first_call = bot.send_message.await_args_list[0].kwargs
+        second_call = bot.send_message.await_args_list[1].kwargs
+        self.assertEqual(first_call["chat_id"], -100555)
+        self.assertEqual(first_call["message_thread_id"], 321)
+        self.assertEqual(second_call["message_thread_id"], 321)
+        self.assertEqual(first_call["text"], "Пользователь: @demo_user\nTelegram ID: 123456789")
+        self.assertEqual(second_call["text"], "Не работает VPN")
+        self.assertNotIn("reply_markup", first_call)
+        self.assertNotIn("reply_markup", second_call)
 
     async def test_forward_admin_reply_to_user_sends_message_from_bot(self) -> None:
         from handlers.support_bot import forward_admin_reply_to_user
@@ -144,7 +143,7 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             text="Проверь, пожалуйста, настройки клиента.",
         )
 
-    async def test_forward_user_message_to_admin_reuses_existing_topic(self) -> None:
+    async def test_forward_user_message_to_admin_reuses_existing_topic_and_sends_plain_text_only(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
@@ -164,13 +163,16 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             settings=settings,
             telegram_id=123456789,
             username="demo_user",
-            text="Не работает VPN",
+            text="вцйвйцвцйв",
         )
 
         self.assertEqual(ticket_id, 21)
         bot.create_forum_topic.assert_not_called()
-        kwargs = bot.send_message.await_args.kwargs
-        self.assertEqual(kwargs["message_thread_id"], 654)
+        bot.send_message.assert_awaited_once_with(
+            chat_id=-100555,
+            message_thread_id=654,
+            text="вцйвйцвцйв",
+        )
 
     async def test_forward_user_message_to_admin_requires_forum_chat(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
