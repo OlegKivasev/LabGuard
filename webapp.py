@@ -106,7 +106,7 @@ def _apply_subscription_display_names(raw_text: str) -> str:
     if not text:
         return text
 
-    fixed_name = "Финляндия"
+    fixed_name = "🇫🇮 Финляндия"
     encoded_name = quote(fixed_name)
 
     if text.lower().startswith("vless://"):
@@ -122,6 +122,13 @@ def _apply_subscription_display_names(raw_text: str) -> str:
         return f"{text}#{fixed_name}"
 
     return text
+
+
+def _normalize_stored_subscription_url(subscription_url: str, telegram_id: int, db: Database) -> str:
+    normalized = _apply_subscription_display_names((subscription_url or "").strip())
+    if normalized and normalized != (subscription_url or "").strip():
+        db.set_subscription_url(telegram_id, normalized)
+    return normalized
 
 
 def _build_marzban_username(telegram_id: int, username: str) -> str:
@@ -434,7 +441,7 @@ def build_app(
         if user and is_active:
             stored_subscription_url = str(user.get("subscription_url") or "").strip()
             if stored_subscription_url:
-                subscription_url = stored_subscription_url
+                subscription_url = _normalize_stored_subscription_url(stored_subscription_url, telegram_id, db)
             for candidate in _candidate_marzban_usernames(user, telegram_id):
                 try:
                     marzban_user = await marzban.get_user(candidate)
@@ -490,7 +497,7 @@ def build_app(
                 if marzban_user:
                     stored_subscription_url = str(existing.get("subscription_url") or "").strip()
                     if stored_subscription_url:
-                        sub_text = stored_subscription_url
+                        sub_text = _normalize_stored_subscription_url(stored_subscription_url, telegram_id, db)
                     else:
                         sub_text, is_subscription = _extract_subscription_text(marzban_user)
                         if is_subscription:
@@ -1578,6 +1585,38 @@ _USER_APP_HTML = """<!doctype html>
       border: 1px solid rgba(191, 90, 104, 0.16);
       display: none;
     }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%) translateY(18px);
+      min-width: 220px;
+      max-width: calc(100vw - 32px);
+      padding: 12px 16px;
+      border-radius: 14px;
+      box-shadow: 0 20px 36px rgba(44, 62, 96, 0.22);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .22s ease, transform .22s ease;
+      z-index: 30;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast-success {
+      background: #e9f7f0;
+      color: #2c8b63;
+      border: 1px solid rgba(44, 139, 99, 0.18);
+    }
+    .toast-error {
+      background: #fff0f2;
+      color: #bf5a68;
+      border: 1px solid rgba(191, 90, 104, 0.16);
+    }
     .support-note {
       margin-top: 8px;
       color: var(--muted);
@@ -1638,6 +1677,7 @@ _USER_APP_HTML = """<!doctype html>
       <div id="supportInfo" class="support-note">Раздел поддержки в приложении скоро появится.</div>
     </div>
   </div>
+  <div id="toast" class="toast toast-success"></div>
 
   <script>
     const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null
@@ -1651,6 +1691,18 @@ _USER_APP_HTML = """<!doctype html>
     }
 
     let latestSubscriptionUrl = ''
+    let toastTimer = null
+
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast')
+      toast.textContent = message
+      toast.className = `toast toast-${type}`
+      if (toastTimer) clearTimeout(toastTimer)
+      requestAnimationFrame(() => toast.classList.add('show'))
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show')
+      }, 2400)
+    }
 
     function formatTraffic(gbValue) {
       const gb = Number(gbValue || 0)
@@ -1807,13 +1859,9 @@ _USER_APP_HTML = """<!doctype html>
       if (!latestSubscriptionUrl) return
       try {
         await navigator.clipboard.writeText(latestSubscriptionUrl)
-        const error = document.getElementById('statusError')
-        error.textContent = 'Ссылка скопирована'
-        error.style.display = 'block'
+        showToast('Ссылка скопирована', 'success')
       } catch (e) {
-        const error = document.getElementById('statusError')
-        error.textContent = latestSubscriptionUrl
-        error.style.display = 'block'
+        showToast(String(e && e.message ? e.message : 'Не удалось скопировать ссылку'), 'error')
       }
     })
 

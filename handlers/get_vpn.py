@@ -80,7 +80,7 @@ def _apply_subscription_display_names(raw_text: str) -> str:
     if not text:
         return text
 
-    fixed_name = "Финляндия"
+    fixed_name = "🇫🇮 Финляндия"
     encoded_name = quote(fixed_name)
 
     if text.lower().startswith("vless://"):

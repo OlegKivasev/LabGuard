@@ -248,7 +248,7 @@ class SubscriptionDisplayNameTests(unittest.TestCase):
 
         updated = _apply_subscription_display_names(raw)
 
-        self.assertEqual(updated, "vless://uuid@example.com:443?type=tcp#%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F")
+        self.assertEqual(updated, "vless://uuid@example.com:443?type=tcp#%F0%9F%87%AB%F0%9F%87%AE%20%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F")
 
     def test_apply_subscription_display_names_replaces_any_http_fragment(self) -> None:
         from handlers.get_vpn import _apply_subscription_display_names
@@ -257,7 +257,7 @@ class SubscriptionDisplayNameTests(unittest.TestCase):
 
         updated = _apply_subscription_display_names(raw)
 
-        self.assertEqual(updated, "https://example.com/sub/abc#Финляндия")
+        self.assertEqual(updated, "https://example.com/sub/abc#🇫🇮 Финляндия")
 
 
 class StubSettings:
@@ -342,7 +342,7 @@ class MiniAppApiTests(unittest.TestCase):
         activation = self.client.post("/app/api/get-vpn")
         self.assertEqual(activation.status_code, 200)
         payload = activation.json()
-        self.assertTrue(payload["subscription_url"].endswith("#Финляндия"))
+        self.assertTrue(payload["subscription_url"].endswith("#🇫🇮 Финляндия"))
         self.assertTrue(any(chat_id == 555 for chat_id, _ in self.bot.messages))
 
         status = self.client.get("/app/api/status")
@@ -371,3 +371,30 @@ class MiniAppApiTests(unittest.TestCase):
         payload = activation.json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["status"], "already_active")
+
+    def test_miniapp_status_normalizes_stored_subscription_url_from_db(self) -> None:
+        self.db.create_user_if_not_exists(telegram_id=1001, username="demo_user")
+        self.db.set_marzban_binding(
+            telegram_id=1001,
+            marzban_id="labguard_demo_user",
+            expires_at="2099-01-01 00:00:00",
+        )
+        self.db.set_subscription_url(
+            1001,
+            "vless://uuid@example.com:443?type=tcp#%F0%9F%9A%80%20Marz%20%28labguard_olegkivasev%29%20%5BVLESS%20-%20tcp%5D",
+        )
+
+        status = self.client.get("/app/api/status")
+
+        self.assertEqual(status.status_code, 200)
+        payload = status.json()
+        self.assertEqual(
+            payload["subscription_url"],
+            "vless://uuid@example.com:443?type=tcp#%F0%9F%87%AB%F0%9F%87%AE%20%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F",
+        )
+
+    def test_user_app_uses_toast_for_copy_feedback(self) -> None:
+        from webapp import _USER_APP_HTML
+
+        self.assertIn('id="toast"', _USER_APP_HTML)
+        self.assertIn("showToast('Ссылка скопирована', 'success')", _USER_APP_HTML)
