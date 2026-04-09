@@ -86,6 +86,7 @@ async def main() -> None:
     database.init_schema()
 
     bot = Bot(token=settings.bot_token)
+    support_bot = Bot(token=settings.support_bot_token) if settings.support_bot_token else None
     await setup_bot(bot, settings)
 
     dp = Dispatcher()
@@ -100,6 +101,15 @@ async def main() -> None:
     )
     dp["marzban"] = marzban_client
     register_routers(dp)
+
+    support_dp = None
+    if support_bot is not None:
+        from handlers.support_bot import router as support_bot_router
+
+        support_dp = Dispatcher()
+        support_dp["db"] = database
+        support_dp["settings"] = settings
+        support_dp.include_router(support_bot_router)
 
     scheduler = build_scheduler()
     scheduler.add_job(
@@ -116,12 +126,18 @@ async def main() -> None:
         web_server, web_task = await start_web_app_server(database, settings, marzban_client, bot=bot)
 
     try:
-        await dp.start_polling(bot)
+        polling_tasks = [asyncio.create_task(dp.start_polling(bot))]
+        if support_dp is not None and support_bot is not None:
+            polling_tasks.append(asyncio.create_task(support_dp.start_polling(support_bot)))
+        await asyncio.gather(*polling_tasks)
     finally:
         if web_server is not None and web_task is not None:
             web_server.should_exit = True
             await web_task
         scheduler.shutdown(wait=False)
+        if support_bot is not None:
+            await support_bot.session.close()
+        await bot.session.close()
 
 
 if __name__ == "__main__":
