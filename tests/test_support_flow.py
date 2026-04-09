@@ -94,3 +94,17 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             chat_id=123456789,
             text="Проверь, пожалуйста, настройки клиента.",
         )
+
+
+class MiniAppCopyTests(unittest.TestCase):
+    def test_user_app_uses_support_bot_linking(self) -> None:
+        from webapp import _USER_APP_HTML
+
+        self.assertIn("?start=app_support", _USER_APP_HTML)
+
+    def test_user_app_removes_need_support_copy(self) -> None:
+        from webapp import _USER_APP_HTML
+
+        self.assertNotIn("Нужна поддержка", _USER_APP_HTML)
+        self.assertIn("Подписка истекла", _USER_APP_HTML)
+        self.assertIn("Подписка не активирована", _USER_APP_HTML)

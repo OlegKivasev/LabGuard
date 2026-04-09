@@ -1595,6 +1595,20 @@ _USER_APP_HTML = """<!doctype html>
       return `${Math.round(gb * 1024)} MB`
     }
 
+    function formatLocalDate(value) {
+      if (!value) return '—'
+      const normalized = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T')
+      const parsed = new Date(`${normalized}Z`)
+      if (Number.isNaN(parsed.getTime())) return '—'
+      return new Intl.DateTimeFormat('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(parsed)
+    }
+
     function renderStatus(data) {
       const statusText = document.getElementById('statusText')
       const statusMeta = document.getElementById('statusMeta')
@@ -1608,19 +1622,18 @@ _USER_APP_HTML = """<!doctype html>
 
       if (data.is_active) {
         statusText.textContent = 'VPN активен'
+        statusBadge.style.display = 'inline-flex'
         statusBadge.textContent = 'Активен'
         statusBadge.className = 'badge badge-active'
-        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Осталось</div><div class="meta-value">${data.remaining_days} дн.</div></div><div class="meta-item"><div class="meta-label">Действует до</div><div class="meta-value">${data.expires_at || '—'} UTC</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div><div class="meta-item"><div class="meta-label">Доступ</div><div class="meta-value">Подписка уже активирована</div></div>`
+        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Осталось</div><div class="meta-value">${data.remaining_days} дн.</div></div><div class="meta-item"><div class="meta-label">Действует до</div><div class="meta-value">${formatLocalDate(data.expires_at)}</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div>`
       } else if (data.trial_used) {
-        statusText.textContent = 'Триал завершен'
-        statusBadge.textContent = 'Нужна поддержка'
-        statusBadge.className = 'badge badge-warn'
-        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Статус</div><div class="meta-value">Повторная выдача недоступна</div></div><div class="meta-item"><div class="meta-label">Следующий шаг</div><div class="meta-value">Напиши в поддержку для продления</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div><div class="meta-item"><div class="meta-label">Подписка</div><div class="meta-value">Можно запросить помощь у администратора</div></div>`
+        statusText.textContent = 'Подписка истекла'
+        statusBadge.style.display = 'none'
+        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Дата окончания</div><div class="meta-value">${formatLocalDate(data.expires_at)}</div></div><div class="muted" style="grid-column:1/-1;">Для продления подписки можно обратиться в поддержку. Приятного пользования.</div>`
       } else {
-        statusText.textContent = 'Подписка еще не активирована'
-        statusBadge.textContent = 'Ожидает активации'
-        statusBadge.className = 'badge badge-inactive'
-        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Состояние</div><div class="meta-value">Триал еще не запускался</div></div><div class="meta-item"><div class="meta-label">Следующий шаг</div><div class="meta-value">Нажми «Получить VPN» для активации</div></div><div class="meta-item"><div class="meta-label">Расход трафика</div><div class="meta-value">${trafficText}</div></div><div class="meta-item"><div class="meta-label">Подписка</div><div class="meta-value">Ссылка появится сразу после выдачи</div></div>`
+        statusText.textContent = 'Подписка не активирована'
+        statusBadge.style.display = 'none'
+        statusMeta.innerHTML = `<div class="muted" style="grid-column:1/-1;">Чтобы получить подписку, нажми кнопку ниже.</div>`
       }
 
       if (data.trial_used) {
@@ -1706,7 +1719,7 @@ _USER_APP_HTML = """<!doctype html>
       const btn = document.getElementById('supportLinkBtn')
       const username = btn.dataset.username || ''
       if (!username) return
-      const url = `https://t.me/${username}`
+      const url = `https://t.me/${username}?start=app_support`
       if (tg && typeof tg.openTelegramLink === 'function') {
         tg.openTelegramLink(url)
       } else {
