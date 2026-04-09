@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
@@ -6,6 +7,19 @@ from config import Settings
 from database import Database
 
 router = Router(name="support_bot")
+
+
+async def _create_support_topic(bot, db: Database, forum_chat_id: int, telegram_id: int, username_text: str, ticket_id: int) -> int:
+    title = f"{username_text} [{telegram_id}]"
+    created_topic = await bot.create_forum_topic(chat_id=forum_chat_id, name=title[:128])
+    message_thread_id = int(created_topic.message_thread_id)
+    db.set_support_topic(
+        telegram_id=telegram_id,
+        forum_chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        ticket_id=ticket_id,
+    )
+    return message_thread_id
 
 
 def _is_admin(message: Message, settings: Settings) -> bool:
@@ -33,27 +47,47 @@ async def forward_user_message_to_admin(
     username_text = f"@{username}" if username else "без username"
     topic = db.get_support_topic_by_telegram_id(telegram_id)
     if topic is None:
-        title = f"{username_text} [{telegram_id}]"
-        created_topic = await bot.create_forum_topic(chat_id=forum_chat_id, name=title[:128])
-        message_thread_id = int(created_topic.message_thread_id)
-        db.set_support_topic(
-            telegram_id=telegram_id,
+        message_thread_id = await _create_support_topic(
+            bot=bot,
+            db=db,
             forum_chat_id=forum_chat_id,
-            message_thread_id=message_thread_id,
+            telegram_id=telegram_id,
+            username_text=username_text,
             ticket_id=ticket_id,
         )
     else:
         message_thread_id = int(topic["message_thread_id"])
 
-    await bot.send_message(
-        chat_id=forum_chat_id,
-        message_thread_id=message_thread_id,
-        text=(
-            f"Пользователь: {username_text}\n"
-            f"Telegram ID: {telegram_id}\n\n"
-            f"{text}"
-        ),
-    )
+    try:
+        await bot.send_message(
+            chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            text=(
+                f"Пользователь: {username_text}\n"
+                f"Telegram ID: {telegram_id}\n\n"
+                f"{text}"
+            ),
+        )
+    except TelegramBadRequest:
+        if topic is None:
+            raise
+        message_thread_id = await _create_support_topic(
+            bot=bot,
+            db=db,
+            forum_chat_id=forum_chat_id,
+            telegram_id=telegram_id,
+            username_text=username_text,
+            ticket_id=ticket_id,
+        )
+        await bot.send_message(
+            chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            text=(
+                f"Пользователь: {username_text}\n"
+                f"Telegram ID: {telegram_id}\n\n"
+                f"{text}"
+            ),
+        )
     return ticket_id
 
 
