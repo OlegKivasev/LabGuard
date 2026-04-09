@@ -1,5 +1,6 @@
 import asyncio
 import argparse
+import contextlib
 import logging
 import sys
 from dataclasses import replace
@@ -151,7 +152,12 @@ async def main() -> None:
     finally:
         if web_server is not None and web_task is not None:
             web_server.should_exit = True
-            await web_task
+            try:
+                await asyncio.wait_for(web_task, timeout=5)
+            except asyncio.TimeoutError:
+                web_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await web_task
         scheduler.shutdown(wait=False)
         if support_bot is not None:
             await support_bot.session.close()
