@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from database import Database
 
@@ -26,3 +27,24 @@ class SupportConfigAndSchemaTests(unittest.TestCase):
             self.assertEqual(row["ticket_id"], 5)
         finally:
             tmpdir.cleanup()
+
+
+class VpnIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_notify_admin_after_vpn_issue(self) -> None:
+        from handlers.get_vpn import _notify_admin_about_vpn_issued
+
+        bot = AsyncMock()
+        settings = type("S", (), {"admin_telegram_ids": {555}})()
+
+        await _notify_admin_about_vpn_issued(
+            bot=bot,
+            settings=settings,
+            telegram_id=123456789,
+            username="demo_user",
+        )
+
+        bot.send_message.assert_awaited_once()
+        args = bot.send_message.await_args.kwargs
+        self.assertEqual(args["chat_id"], 555)
+        self.assertIn("123456789", args["text"])
+        self.assertIn("demo_user", args["text"])

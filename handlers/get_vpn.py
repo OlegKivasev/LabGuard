@@ -75,6 +75,26 @@ def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
     return f"{base}/{url.lstrip('/')}"
 
 
+async def _notify_admin_about_vpn_issued(
+    bot,
+    settings: Settings,
+    telegram_id: int,
+    username: str | None,
+) -> None:
+    admin_ids = sorted(settings.admin_telegram_ids)
+    if not admin_ids or bot is None:
+        return
+
+    username_text = f"@{username}" if username else "без username"
+    text = (
+        "Новый пользователь получил VPN-ссылку.\n\n"
+        f"Пользователь: {username_text}\n"
+        f"Telegram ID: {telegram_id}\n"
+        f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    )
+    await bot.send_message(chat_id=admin_ids[0], text=text)
+
+
 @router.message(Command("get"))
 async def cmd_get(
     message: Message,
@@ -187,6 +207,15 @@ async def cmd_get(
         return
 
     if is_subscription:
+        try:
+            await _notify_admin_about_vpn_issued(
+                bot=message.bot,
+                settings=settings,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+            )
+        except Exception:
+            logger.exception("Failed to notify admin about vpn issue for telegram_id=%s", message.from_user.id)
         await message.answer(
             "Подписка активирована.\n"
             f"Срок действия: до {expires_at} UTC\n\n"
@@ -197,6 +226,15 @@ async def cmd_get(
         )
         return
 
+    try:
+        await _notify_admin_about_vpn_issued(
+            bot=message.bot,
+            settings=settings,
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+        )
+    except Exception:
+        logger.exception("Failed to notify admin about vpn issue for telegram_id=%s", message.from_user.id)
     await message.answer(
         "Подписка активирована, но сервер вернул только прямую ссылку.\n"
         f"Срок действия: до {expires_at} UTC\n\n"
