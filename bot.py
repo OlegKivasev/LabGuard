@@ -144,12 +144,18 @@ async def main() -> None:
     if settings.web_app_base_url:
         web_server, web_task = await start_web_app_server(database, settings, marzban_client, bot=bot)
 
+    polling_tasks: list[asyncio.Task] = []
     try:
-        polling_tasks = [asyncio.create_task(dp.start_polling(bot))]
+        polling_tasks.append(asyncio.create_task(dp.start_polling(bot)))
         if support_dp is not None and support_bot is not None:
             polling_tasks.append(asyncio.create_task(support_dp.start_polling(support_bot)))
         await asyncio.gather(*polling_tasks)
     finally:
+        for task in polling_tasks:
+            if not task.done():
+                task.cancel()
+        if polling_tasks:
+            await asyncio.gather(*polling_tasks, return_exceptions=True)
         if web_server is not None and web_task is not None:
             web_server.should_exit = True
             try:
