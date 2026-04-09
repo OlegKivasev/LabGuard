@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, W
 from config import Settings
 from database import Database
 from miniapp_auth import sign_admin_token
-from marzban import MarzbanClient
+from xui import XUIClient
 
 router = Router(name="admin")
 logger = logging.getLogger(__name__)
@@ -24,9 +24,9 @@ def _is_admin(message: Message, settings: Settings) -> bool:
     return by_id or by_username
 
 
-def _candidate_marzban_usernames(user: dict, telegram_id: int) -> list[str]:
+def _candidate_panel_client_ids(user: dict, telegram_id: int) -> list[str]:
     candidates: list[str] = []
-    for value in (user.get("marzban_id"), user.get("username"), f"tg_{telegram_id}"):
+    for value in (user.get("panel_client_id"), user.get("marzban_id"), user.get("username"), f"tg_{telegram_id}"):
         name = str(value or "").strip()
         if name and name not in candidates:
             candidates.append(name)
@@ -78,7 +78,7 @@ async def cmd_admin_users(message: Message, command: CommandObject, db: Database
     for user in users:
         lines.append(
             f"- id={user['telegram_id']} | tg={user['username'] or '-'} | "
-            f"marzban={user['marzban_id'] or '-'} | exp={user['expires_at'] or '-'}"
+            f"panel={user.get('panel_client_id') or user.get('marzban_id') or '-'} | exp={user['expires_at'] or '-'}"
         )
     await message.answer("\n".join(lines))
 
@@ -89,7 +89,7 @@ async def cmd_admin_deactivate(
     command: CommandObject,
     db: Database,
     settings: Settings,
-    marzban: MarzbanClient,
+    xui: XUIClient,
 ) -> None:
     if not _is_admin(message, settings):
         await message.answer("Нет доступа к admin-командам.")
@@ -112,16 +112,15 @@ async def cmd_admin_deactivate(
             await message.answer("Пользователь не найден в локальной базе.")
         return
 
-    marzban_id = str(user.get("marzban_id") or "").strip()
     disabled = False
-    for candidate in _candidate_marzban_usernames(user, telegram_id):
+    for candidate in _candidate_panel_client_ids(user, telegram_id):
         try:
-            if await marzban.disable_user(candidate):
+            if await xui.disable_user(candidate):
                 disabled = True
                 break
         except Exception as exc:
-            logger.exception("Failed to disable Marzban user %s: %s", candidate, exc)
-            await message.answer("Не удалось деактивировать пользователя в Marzban.")
+            logger.exception("Failed to disable 3X-UI user %s: %s", candidate, exc)
+            await message.answer("Не удалось деактивировать пользователя в 3X-UI.")
             return
 
     db.clear_trial(telegram_id)
@@ -132,7 +131,7 @@ async def cmd_admin_deactivate(
     else:
         await message.answer(
             f"Локальный триал сброшен для telegram_id={telegram_id}, "
-            "но пользователь в Marzban не найден."
+            "но пользователь в 3X-UI не найден."
         )
 
 
@@ -142,7 +141,7 @@ async def cmd_admin_delete(
     command: CommandObject,
     db: Database,
     settings: Settings,
-    marzban: MarzbanClient,
+    xui: XUIClient,
 ) -> None:
     if not _is_admin(message, settings):
         await message.answer("Нет доступа к admin-командам.")
@@ -159,25 +158,25 @@ async def cmd_admin_delete(
         await message.answer("Пользователь не найден в локальной базе.")
         return
 
-    deleted_in_marzban = False
-    for candidate in _candidate_marzban_usernames(user, telegram_id):
+    deleted_in_panel = False
+    for candidate in _candidate_panel_client_ids(user, telegram_id):
         try:
-            if await marzban.delete_user(candidate):
-                deleted_in_marzban = True
+            if await xui.delete_user(candidate):
+                deleted_in_panel = True
                 break
         except Exception as exc:
-            logger.exception("Failed to delete Marzban user %s: %s", candidate, exc)
-            await message.answer("Не удалось удалить пользователя в Marzban.")
+            logger.exception("Failed to delete 3X-UI user %s: %s", candidate, exc)
+            await message.answer("Не удалось удалить пользователя в 3X-UI.")
             return
 
     db.clear_trial_lock(telegram_id)
     deleted = db.delete_user(telegram_id)
     if deleted:
         db.log_event(telegram_id, "admin_delete")
-    if deleted_in_marzban:
+    if deleted_in_panel:
         await message.answer(f"Пользователь telegram_id={telegram_id} удален.")
     else:
         await message.answer(
             f"Локальный пользователь telegram_id={telegram_id} удален, "
-            "но в Marzban не найден."
+            "но в 3X-UI не найден."
         )

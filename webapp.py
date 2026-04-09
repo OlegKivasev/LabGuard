@@ -12,7 +12,7 @@ import uvicorn
 from config import Settings
 from database import Database
 from miniapp_auth import verify_admin_token, verify_telegram_init_data
-from marzban import MarzbanClient
+from xui import XUIClient
 
 
 def _is_admin_allowed(settings: Settings, admin_id: int, username: str = "") -> bool:
@@ -47,7 +47,7 @@ def _verify_admin(settings: Settings, token: str, init_data: str) -> int:
 
 def _candidate_marzban_usernames(user: dict, telegram_id: int) -> list[str]:
     candidates: list[str] = []
-    for value in (user.get("marzban_id"), user.get("username"), f"tg_{telegram_id}"):
+    for value in (user.get("panel_client_id"), user.get("marzban_id"), user.get("username"), f"tg_{telegram_id}"):
         name = str(value or "").strip()
         if name and name not in candidates:
             candidates.append(name)
@@ -116,10 +116,8 @@ def _apply_subscription_display_names(raw_text: str) -> str:
         return f"{text}#{encoded_name}"
 
     if text.lower().startswith(("http://", "https://")):
-        base, sep, _fragment = text.partition("#")
-        if sep:
-            return f"{base}#{fixed_name}"
-        return f"{text}#{fixed_name}"
+        base, _sep, _fragment = text.partition("#")
+        return base
 
     return text
 
@@ -167,7 +165,7 @@ def _format_trial_notification(expires_at: str) -> str:
 def build_app(
     db: Database,
     settings: Settings,
-    marzban: MarzbanClient,
+    marzban: XUIClient,
     bot: Any | None = None,
 ) -> FastAPI:
     app = FastAPI(title="VPN Admin Mini App", docs_url=None, redoc_url=None)
@@ -239,14 +237,14 @@ def build_app(
         local = db.get_admin_metrics_snapshot()
         connected_users: int | None = None
         online_now: int | None = None
-        marzban_error = ""
+        panel_error = ""
         try:
             marzban_usage = await marzban.get_users_usage_snapshot()
             marzban_system = await marzban.get_system_snapshot()
             connected_users = int(marzban_usage.get("connected_users", 0))
             online_now = int(marzban_system.get("online_users", 0))
         except Exception as exc:
-            marzban_error = str(exc)
+            panel_error = str(exc)
 
         return {
             "metrics": {
@@ -259,7 +257,7 @@ def build_app(
             },
             "meta": {
                 "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-                "marzban_error": marzban_error,
+                "marzban_error": panel_error,
             },
         }
 
@@ -374,9 +372,9 @@ def build_app(
             marzban_user = await marzban.create_user(username=marzban_username, expire_at=target_dt)
             marzban_changed = bool(marzban_user)
             user = db.get_user_by_telegram_id(telegram_id) or user
-            db.set_marzban_binding(
+            db.set_panel_binding(
                 telegram_id=telegram_id,
-                marzban_id=str(marzban_user.get("username", marzban_username)),
+                panel_client_id=str(marzban_user.get("email", marzban_username)),
                 expires_at=local_expires,
             )
 
@@ -525,7 +523,7 @@ def build_app(
             existing = db.get_user_by_telegram_id(telegram_id)
 
         if not marzban.is_configured:
-            raise HTTPException(status_code=503, detail="Marzban API не настроен")
+            raise HTTPException(status_code=503, detail="3X-UI API не настроен")
 
         expiry_dt = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=settings.free_trial_days)
         marzban_username = _build_marzban_username(telegram_id, username)
@@ -535,16 +533,16 @@ def build_app(
         except RuntimeError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Не удалось создать подписку: {exc}") from exc
+            raise HTTPException(status_code=500, detail=f"Не удалось создать подписку через 3X-UI: {exc}") from exc
 
         expires_at = datetime.fromtimestamp(
             int(marzban_user.get("expire", int(expiry_dt.timestamp()))),
             tz=timezone.utc,
         ).strftime("%Y-%m-%d %H:%M:%S")
 
-        db.set_marzban_binding(
+        db.set_panel_binding(
             telegram_id=telegram_id,
-            marzban_id=str(marzban_user.get("username", marzban_username)),
+            panel_client_id=str(marzban_user.get("email", marzban_username)),
             expires_at=expires_at,
         )
         db.mark_trial_used(telegram_id)
@@ -573,7 +571,7 @@ def build_app(
 async def start_web_app_server(
     db: Database,
     settings: Settings,
-    marzban: MarzbanClient,
+    marzban: XUIClient,
     bot: Any | None = None,
 ) -> tuple[uvicorn.Server, asyncio.Task]:
     app = build_app(db, settings, marzban, bot=bot)

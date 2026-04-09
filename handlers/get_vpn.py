@@ -9,7 +9,7 @@ from aiogram.types import Message
 
 from config import Settings
 from database import Database
-from marzban import MarzbanClient
+from xui import XUIClient
 from .keyboards import post_subscription_keyboard
 from .menu_context import main_menu_for_user
 
@@ -90,10 +90,8 @@ def _apply_subscription_display_names(raw_text: str) -> str:
         return f"{text}#{encoded_name}"
 
     if text.lower().startswith(("http://", "https://")):
-        base, sep, _fragment = text.partition("#")
-        if sep:
-            return f"{base}#{fixed_name}"
-        return f"{text}#{fixed_name}"
+        base, _sep, _fragment = text.partition("#")
+        return base
 
     return text
 
@@ -123,7 +121,7 @@ async def cmd_get(
     message: Message,
     db: Database,
     settings: Settings,
-    marzban: MarzbanClient,
+    xui: XUIClient,
 ) -> None:
     if message.from_user is None:
         return
@@ -166,9 +164,9 @@ async def cmd_get(
     if existing is None:
         existing = db.get_user_by_telegram_id(message.from_user.id)
 
-    if not marzban.is_configured:
+    if not xui.is_configured:
         await message.answer(
-            "Marzban API пока не настроен. Заполни настройки API и попробуй снова.",
+            "3X-UI API пока не настроен. Заполни настройки API и попробуй снова.",
             reply_markup=main_menu_for_user(existing),
         )
         return
@@ -177,27 +175,27 @@ async def cmd_get(
     marzban_username = _build_marzban_username(message)
 
     try:
-        marzban_user = await marzban.create_user(
+        panel_user = await xui.create_user(
             username=marzban_username,
             expire_at=expiry_dt,
         )
     except RuntimeError as exc:
         reason = str(exc)
-        logger.exception("Marzban runtime error for telegram_id=%s: %s", message.from_user.id, reason)
+        logger.exception("3X-UI runtime error for telegram_id=%s: %s", message.from_user.id, reason)
         if "No enabled VLESS inbounds" in reason:
             await message.answer(
                 "На сервере не найден активный VLESS inbound. "
-                "Включи VLESS inbound в Marzban и попробуй снова.",
+                "Включи VLESS inbound в 3X-UI и попробуй снова.",
                 reply_markup=main_menu_for_user(existing),
             )
             return
         await message.answer(
-            "Ошибка Marzban API. Проверь настройки сервера и попробуй снова через кнопку меню.",
+            "Ошибка 3X-UI API. Проверь настройки сервера и попробуй снова через кнопку меню.",
             reply_markup=main_menu_for_user(existing),
         )
         return
     except Exception as exc:
-        logger.exception("Failed to create Marzban user for telegram_id=%s: %s", message.from_user.id, exc)
+        logger.exception("Failed to create 3X-UI user for telegram_id=%s: %s", message.from_user.id, exc)
         await message.answer(
             "Не удалось создать подписку. Попробуй позже или напиши в поддержку.",
             reply_markup=main_menu_for_user(existing),
@@ -205,22 +203,22 @@ async def cmd_get(
         return
 
     expires_at = datetime.fromtimestamp(
-        int(marzban_user.get("expire", int(expiry_dt.timestamp()))),
+        int(panel_user.get("expire", int(expiry_dt.timestamp()))),
         tz=timezone.utc,
     ).strftime("%Y-%m-%d %H:%M:%S")
 
-    db.set_marzban_binding(
+    db.set_panel_binding(
         telegram_id=message.from_user.id,
-        marzban_id=str(marzban_user.get("username", marzban_username)),
+        panel_client_id=str(panel_user.get("email", marzban_username)),
         expires_at=expires_at,
     )
     db.mark_trial_used(message.from_user.id)
     db.touch_last_active(message.from_user.id)
     db.log_event(message.from_user.id, "get")
 
-    config_text, is_subscription = _extract_subscription_text(marzban_user)
+    config_text, is_subscription = _extract_subscription_text(panel_user)
     if is_subscription:
-        config_text = _normalize_subscription_url(config_text, marzban.base_url)
+        config_text = _normalize_subscription_url(config_text, xui.base_url)
     config_text = _apply_subscription_display_names(config_text)
 
     if not config_text:
