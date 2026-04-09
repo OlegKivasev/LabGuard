@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
