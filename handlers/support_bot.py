@@ -31,20 +31,30 @@ async def forward_user_message_to_admin(
 
     ticket_id = db.create_ticket(telegram_id, text)
     username_text = f"@{username}" if username else "без username"
-    sent = await bot.send_message(
-        chat_id=admin_ids[0],
-        text=(
-            "Новый тикет поддержки.\n\n"
-            f"Пользователь: {username_text}\n"
-            f"Telegram ID: {telegram_id}\n"
-            f"Сообщение: {text}"
-        ),
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Открыть", url=f"tg://user?id={telegram_id}")]]
-        ),
-    )
-    db.link_support_admin_message(admin_ids[0], sent.message_id, telegram_id, ticket_id)
-    return ticket_id
+    last_error: Exception | None = None
+
+    for admin_id in admin_ids:
+        try:
+            sent = await bot.send_message(
+                chat_id=admin_id,
+                text=(
+                    "Новый тикет поддержки.\n\n"
+                    f"Пользователь: {username_text}\n"
+                    f"Telegram ID: {telegram_id}\n"
+                    f"Сообщение: {text}"
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text="Открыть", url=f"tg://user?id={telegram_id}")]]
+                ),
+            )
+        except Exception as exc:
+            last_error = exc
+            continue
+
+        db.link_support_admin_message(admin_id, sent.message_id, telegram_id, ticket_id)
+        return ticket_id
+
+    raise RuntimeError("No reachable admin chats for support bot") from last_error
 
 
 async def forward_admin_reply_to_user(
@@ -96,12 +106,19 @@ async def support_user_message(message: Message, db: Database, settings: Setting
         await message.answer("Чтобы ответить пользователю, используй reply на сообщение тикета.")
         return
 
-    ticket_id = await forward_user_message_to_admin(
-        bot=message.bot,
-        db=db,
-        settings=settings,
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        text=message.text or "",
-    )
+    try:
+        ticket_id = await forward_user_message_to_admin(
+            bot=message.bot,
+            db=db,
+            settings=settings,
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            text=message.text or "",
+        )
+    except RuntimeError:
+        await message.answer(
+            "Поддержка сейчас недоступна. Попроси администратора сначала открыть чат с support-ботом и нажать /start."
+        )
+        return
+
     await message.answer(f"Сообщение отправлено в поддержку. Номер обращения: #{ticket_id}.")

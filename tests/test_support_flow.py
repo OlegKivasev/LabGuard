@@ -127,6 +127,54 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             text="Проверь, пожалуйста, настройки клиента.",
         )
 
+    async def test_forward_user_message_to_admin_uses_next_available_admin(self) -> None:
+        from handlers.support_bot import forward_user_message_to_admin
+
+        db = Mock()
+        db.create_ticket.return_value = 21
+        db.link_support_admin_message.return_value = None
+
+        async def send_message_side_effect(*, chat_id, text, reply_markup):
+            if chat_id == 555:
+                raise RuntimeError("bot can't initiate conversation with a user")
+            return type("Sent", (), {"message_id": 654})()
+
+        bot = AsyncMock()
+        bot.send_message.side_effect = send_message_side_effect
+        settings = type("S", (), {"admin_telegram_ids": {555, 777}})()
+
+        ticket_id = await forward_user_message_to_admin(
+            bot=bot,
+            db=db,
+            settings=settings,
+            telegram_id=123456789,
+            username="demo_user",
+            text="Не работает VPN",
+        )
+
+        self.assertEqual(ticket_id, 21)
+        db.link_support_admin_message.assert_called_once_with(777, 654, 123456789, 21)
+
+    async def test_forward_user_message_to_admin_raises_when_no_admin_reachable(self) -> None:
+        from handlers.support_bot import forward_user_message_to_admin
+
+        db = Mock()
+        db.create_ticket.return_value = 22
+
+        bot = AsyncMock()
+        bot.send_message.side_effect = RuntimeError("bot can't initiate conversation with a user")
+        settings = type("S", (), {"admin_telegram_ids": {555}})()
+
+        with self.assertRaisesRegex(RuntimeError, "No reachable admin chats"):
+            await forward_user_message_to_admin(
+                bot=bot,
+                db=db,
+                settings=settings,
+                telegram_id=123456789,
+                username="demo_user",
+                text="Не работает VPN",
+            )
+
 
 class MiniAppCopyTests(unittest.TestCase):
     def test_user_app_uses_support_bot_linking(self) -> None:
