@@ -16,6 +16,9 @@ from telegram_setup import setup_bot
 from webapp import start_web_app_server
 
 
+logger = logging.getLogger(__name__)
+
+
 def check_config() -> int:
     settings = load_settings()
     missing = settings.missing_for_bot_start()
@@ -151,23 +154,36 @@ async def main() -> None:
             polling_tasks.append(asyncio.create_task(support_dp.start_polling(support_bot)))
         await asyncio.gather(*polling_tasks)
     finally:
+        logger.info("Shutdown: entering finally block")
         for task in polling_tasks:
             if not task.done():
+                logger.info("Shutdown: cancelling polling task %s", task.get_name())
                 task.cancel()
         if polling_tasks:
+            logger.info("Shutdown: waiting for polling tasks to finish")
             await asyncio.gather(*polling_tasks, return_exceptions=True)
+            logger.info("Shutdown: polling tasks finished")
         if web_server is not None and web_task is not None:
+            logger.info("Shutdown: stopping web server")
             web_server.should_exit = True
             try:
                 await asyncio.wait_for(web_task, timeout=5)
+                logger.info("Shutdown: web server stopped cleanly")
             except asyncio.TimeoutError:
+                logger.warning("Shutdown: web server stop timed out, cancelling task")
                 web_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await web_task
+                logger.info("Shutdown: web server task cancelled")
+        logger.info("Shutdown: stopping scheduler")
         scheduler.shutdown(wait=False)
         if support_bot is not None:
+            logger.info("Shutdown: closing support bot session")
             await support_bot.session.close()
+            logger.info("Shutdown: support bot session closed")
+        logger.info("Shutdown: closing main bot session")
         await bot.session.close()
+        logger.info("Shutdown: main bot session closed")
 
 
 if __name__ == "__main__":
