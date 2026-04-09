@@ -2,6 +2,7 @@ import asyncio
 import argparse
 import contextlib
 import logging
+import signal
 import sys
 from dataclasses import replace
 
@@ -147,21 +148,52 @@ async def main() -> None:
     if settings.web_app_base_url:
         web_server, web_task = await start_web_app_server(database, settings, marzban_client, bot=bot)
 
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def request_shutdown(sig_name: str) -> None:
+        logger.warning("Received %s signal", sig_name)
+        shutdown_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        with contextlib.suppress(NotImplementedError):
+            loop.add_signal_handler(sig, request_shutdown, sig.name)
+
     polling_tasks: list[asyncio.Task] = []
+    shutdown_wait_task: asyncio.Task | None = None
     try:
-        polling_tasks.append(asyncio.create_task(dp.start_polling(bot)))
+        polling_tasks.append(asyncio.create_task(dp.start_polling(bot, handle_signals=False), name="main-bot-polling"))
         if support_dp is not None and support_bot is not None:
-            polling_tasks.append(asyncio.create_task(support_dp.start_polling(support_bot)))
-        await asyncio.gather(*polling_tasks)
+            polling_tasks.append(
+                asyncio.create_task(
+                    support_dp.start_polling(support_bot, handle_signals=False),
+                    name="support-bot-polling",
+                )
+            )
+        shutdown_wait_task = asyncio.create_task(shutdown_event.wait(), name="shutdown-wait")
+        done, pending = await asyncio.wait([*polling_tasks, shutdown_wait_task], return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            if task is shutdown_wait_task:
+                continue
+            if task.cancelled():
+                continue
+            exc = task.exception()
+            if exc is not None:
+                raise exc
+        for task in pending:
+            task.cancel()
     finally:
         logger.info("Shutdown: entering finally block")
+        if shutdown_wait_task is not None and not shutdown_wait_task.done():
+            shutdown_wait_task.cancel()
         for task in polling_tasks:
             if not task.done():
                 logger.info("Shutdown: cancelling polling task %s", task.get_name())
                 task.cancel()
-        if polling_tasks:
+        tasks_to_wait = [task for task in [shutdown_wait_task, *polling_tasks] if task is not None]
+        if tasks_to_wait:
             logger.info("Shutdown: waiting for polling tasks to finish")
-            await asyncio.gather(*polling_tasks, return_exceptions=True)
+            await asyncio.gather(*tasks_to_wait, return_exceptions=True)
             logger.info("Shutdown: polling tasks finished")
         if web_server is not None and web_task is not None:
             logger.info("Shutdown: stopping web server")
@@ -184,6 +216,9 @@ async def main() -> None:
         logger.info("Shutdown: closing main bot session")
         await bot.session.close()
         logger.info("Shutdown: main bot session closed")
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with contextlib.suppress(NotImplementedError):
+                loop.remove_signal_handler(sig)
 
 
 if __name__ == "__main__":
