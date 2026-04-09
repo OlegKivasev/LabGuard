@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
+    support_bot_token: str
     marzban_base_url: str
     marzban_api_key: str
     marzban_username: str
@@ -27,6 +28,14 @@ class Settings:
 
         if not self.bot_token:
             missing.append("BOT_TOKEN")
+
+        return missing
+
+    def missing_for_support_bot_start(self) -> list[str]:
+        missing: list[str] = []
+
+        if not self.support_bot_token:
+            missing.append("SUPPORT_BOT_TOKEN")
 
         return missing
 
@@ -65,6 +74,7 @@ def load_settings() -> Settings:
 
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", "").strip(),
+        support_bot_token=os.getenv("SUPPORT_BOT_TOKEN", "").strip(),
         marzban_base_url=os.getenv("MARZBAN_BASE_URL", "").strip(),
         marzban_api_key=os.getenv("MARZBAN_API_KEY", "").strip(),
         marzban_username=os.getenv("MARZBAN_USERNAME", "").strip(),

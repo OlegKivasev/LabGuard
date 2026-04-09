@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS messages (
     sent_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS support_admin_message_links (
+    id               INTEGER PRIMARY KEY,
+    admin_chat_id    INTEGER NOT NULL,
+    admin_message_id INTEGER NOT NULL,
+    telegram_id      INTEGER NOT NULL,
+    ticket_id        INTEGER REFERENCES tickets(id),
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(admin_chat_id, admin_message_id)
+);
+
 CREATE TABLE IF NOT EXISTS daily_stats (
     date            DATE PRIMARY KEY,
     new_users       INTEGER DEFAULT 0,
@@ -371,6 +381,39 @@ class Database:
                 (ticket_id, text),
             )
             return ticket_id
+
+    def link_support_admin_message(
+        self,
+        admin_chat_id: int,
+        admin_message_id: int,
+        telegram_id: int,
+        ticket_id: int,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO support_admin_message_links (
+                    admin_chat_id, admin_message_id, telegram_id, ticket_id
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (admin_chat_id, admin_message_id, telegram_id, ticket_id),
+            )
+
+    def get_support_link_by_admin_message(
+        self,
+        admin_chat_id: int,
+        admin_message_id: int,
+    ) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT admin_chat_id, admin_message_id, telegram_id, ticket_id
+                FROM support_admin_message_links
+                WHERE admin_chat_id = ? AND admin_message_id = ?
+                """,
+                (admin_chat_id, admin_message_id),
+            ).fetchone()
+            return dict(row) if row else None
 
     def get_admin_overview(self) -> dict[str, int]:
         with self.connect() as conn:
