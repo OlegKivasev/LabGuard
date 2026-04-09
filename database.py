@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     telegram_id   INTEGER UNIQUE,
     username      TEXT,
     marzban_id    TEXT,
+    panel_client_id TEXT,
     subscription_url TEXT,
     platform      TEXT,
     source        TEXT,
@@ -107,6 +108,8 @@ class Database:
                 conn.execute("ALTER TABLE users ADD COLUMN no_trial_limits BOOLEAN DEFAULT 0")
             if "subscription_url" not in user_columns:
                 conn.execute("ALTER TABLE users ADD COLUMN subscription_url TEXT")
+            if "panel_client_id" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN panel_client_id TEXT")
 
     def create_user_if_not_exists(
         self,
@@ -148,7 +151,7 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT telegram_id, username, marzban_id, expires_at, created_at
+                SELECT telegram_id, username, COALESCE(panel_client_id, marzban_id) AS panel_client_id, expires_at, created_at
                 FROM users
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -166,7 +169,7 @@ class Database:
                     SELECT
                         telegram_id,
                         username,
-                        marzban_id,
+                        COALESCE(panel_client_id, marzban_id) AS panel_client_id,
                         expires_at,
                         created_at,
                         no_trial_limits,
@@ -188,7 +191,7 @@ class Database:
                 SELECT
                     telegram_id,
                     username,
-                    marzban_id,
+                    COALESCE(panel_client_id, marzban_id) AS panel_client_id,
                     expires_at,
                     created_at,
                     no_trial_limits,
@@ -213,7 +216,7 @@ class Database:
                 SELECT
                     telegram_id,
                     username,
-                    marzban_id,
+                    COALESCE(panel_client_id, marzban_id) AS panel_client_id,
                     created_at,
                     expires_at,
                     no_trial_limits,
@@ -296,12 +299,25 @@ class Database:
                 (marzban_id, expires_at, telegram_id),
             )
 
+    def set_panel_binding(
+        self,
+        telegram_id: int,
+        panel_client_id: str,
+        expires_at: str,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE users SET panel_client_id = ?, expires_at = ? WHERE telegram_id = ?",
+                (panel_client_id, expires_at, telegram_id),
+            )
+
     def clear_trial(self, telegram_id: int) -> bool:
         with self.connect() as conn:
             cursor = conn.execute(
                 """
                 UPDATE users
                 SET marzban_id = NULL,
+                    panel_client_id = NULL,
                     expires_at = NULL,
                     notified_3d = 0,
                     notified_1d = 0,

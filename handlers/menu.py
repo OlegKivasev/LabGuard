@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, Message
 
 from config import Settings
 from database import Database
-from marzban import MarzbanClient
+from xui import XUIClient
 
 from .get_vpn import cmd_get
 from .keyboards import (
@@ -70,10 +70,10 @@ async def cb_get_confirm(
     callback: CallbackQuery,
     db: Database,
     settings: Settings,
-    marzban: MarzbanClient,
+    xui: XUIClient,
 ) -> None:
     if callback.message:
-        await cmd_get(callback.message, db, settings, marzban)
+        await cmd_get(callback.message, db, settings, xui)
     await callback.answer()
 
 
