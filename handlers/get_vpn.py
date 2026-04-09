@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import logging
 import re
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -73,6 +73,27 @@ def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
         return url
 
     return f"{base}/{url.lstrip('/')}"
+
+
+def _apply_subscription_display_names(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        return text
+
+    if text.lower().startswith("vless://"):
+        base, sep, fragment = text.partition("#")
+        fragment_text = unquote(fragment or "")
+        if not fragment_text or fragment_text.lower() == "subscription":
+            fragment_text = "🇫🇮 Финляндия VPN"
+        return f"{base}{sep}{quote(fragment_text)}"
+
+    if text.lower().startswith(("http://", "https://")):
+        if "#" in text:
+            base, _, _ = text.partition("#")
+            return f"{base}#LabGuard"
+        return f"{text}#LabGuard"
+
+    return text
 
 
 async def _notify_admin_about_vpn_issued(
@@ -198,6 +219,7 @@ async def cmd_get(
     config_text, is_subscription = _extract_subscription_text(marzban_user)
     if is_subscription:
         config_text = _normalize_subscription_url(config_text, marzban.base_url)
+    config_text = _apply_subscription_display_names(config_text)
 
     if not config_text:
         await message.answer(

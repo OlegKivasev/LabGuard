@@ -108,3 +108,23 @@ class MiniAppCopyTests(unittest.TestCase):
         self.assertNotIn("Нужна поддержка", _USER_APP_HTML)
         self.assertIn("Подписка истекла", _USER_APP_HTML)
         self.assertIn("Подписка не активирована", _USER_APP_HTML)
+
+
+class SubscriptionDisplayNameTests(unittest.TestCase):
+    def test_apply_subscription_display_names(self) -> None:
+        from handlers.get_vpn import _apply_subscription_display_names
+
+        raw = "vless://uuid@example.com:443?type=tcp#subscription"
+
+        updated = _apply_subscription_display_names(raw)
+
+        self.assertIn("%F0%9F%87%AB%F0%9F%87%AE%20%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F%20VPN", updated)
+
+    def test_apply_subscription_name_for_http_subscription_url(self) -> None:
+        from handlers.get_vpn import _apply_subscription_display_names
+
+        raw = "https://example.com/sub/abc#subscription"
+
+        updated = _apply_subscription_display_names(raw)
+
+        self.assertIn("#LabGuard", updated)
