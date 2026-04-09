@@ -477,7 +477,10 @@ def build_app(
             if expires_at_dt > now:
                 marzban_user = None
                 for candidate in _candidate_marzban_usernames(existing, telegram_id):
-                    marzban_user = await marzban.get_user(candidate)
+                    try:
+                        marzban_user = await marzban.get_user(candidate)
+                    except Exception:
+                        marzban_user = None
                     if marzban_user:
                         break
 
@@ -1759,7 +1762,16 @@ _USER_APP_HTML = """<!doctype html>
       error.style.display = 'none'
       try {
         const res = await fetch(withAuth('/app/api/get-vpn'), { method: 'POST', headers: authHeaders() })
-        const data = await res.json()
+        const raw = await res.text()
+        let data = {}
+        try {
+          data = raw ? JSON.parse(raw) : {}
+        } catch (_e) {
+          if (!res.ok) {
+            throw new Error(raw || 'Не удалось получить VPN')
+          }
+          throw new Error('Некорректный ответ сервера')
+        }
         if (!res.ok || data.ok === false) {
           throw new Error(data.detail || data.message || 'Не удалось получить VPN')
         }
