@@ -83,7 +83,7 @@ class VpnIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_forward_user_message_to_admin_creates_topic_and_posts_into_it(self) -> None:
+    async def test_forward_user_message_to_admin_creates_topic_and_sends_header_then_text(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
@@ -111,10 +111,16 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             message_thread_id=321,
             ticket_id=17,
         )
-        bot.send_message.assert_awaited_once()
-        kwargs = bot.send_message.await_args.kwargs
-        self.assertEqual(kwargs["chat_id"], -100555)
-        self.assertEqual(kwargs["message_thread_id"], 321)
+        self.assertEqual(bot.send_message.await_count, 2)
+        first_call = bot.send_message.await_args_list[0].kwargs
+        second_call = bot.send_message.await_args_list[1].kwargs
+        self.assertEqual(first_call["chat_id"], -100555)
+        self.assertEqual(first_call["message_thread_id"], 321)
+        self.assertEqual(second_call["message_thread_id"], 321)
+        self.assertEqual(first_call["text"], "Пользователь: @demo_user\nTelegram ID: 123456789")
+        self.assertEqual(second_call["text"], "Не работает VPN")
+        self.assertNotIn("reply_markup", first_call)
+        self.assertNotIn("reply_markup", second_call)
 
     async def test_forward_admin_reply_to_user_sends_message_from_bot(self) -> None:
         from handlers.support_bot import forward_admin_reply_to_user
@@ -137,7 +143,7 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             text="Проверь, пожалуйста, настройки клиента.",
         )
 
-    async def test_forward_user_message_to_admin_reuses_existing_topic(self) -> None:
+    async def test_forward_user_message_to_admin_reuses_existing_topic_and_sends_plain_text_only(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
@@ -157,13 +163,16 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             settings=settings,
             telegram_id=123456789,
             username="demo_user",
-            text="Не работает VPN",
+            text="вцйвйцвцйв",
         )
 
         self.assertEqual(ticket_id, 21)
         bot.create_forum_topic.assert_not_called()
-        kwargs = bot.send_message.await_args.kwargs
-        self.assertEqual(kwargs["message_thread_id"], 654)
+        bot.send_message.assert_awaited_once_with(
+            chat_id=-100555,
+            message_thread_id=654,
+            text="вцйвйцвцйв",
+        )
 
     async def test_forward_user_message_to_admin_requires_forum_chat(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
@@ -184,6 +193,37 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
                 text="Не работает VPN",
             )
 
+    async def test_support_user_message_replies_with_short_confirmation(self) -> None:
+        from handlers.support_bot import support_user_message
+
+        message = AsyncMock()
+        message.from_user = type("User", (), {"id": 123456789, "username": "demo_user"})()
+        message.text = "Не работает VPN"
+        message.bot = AsyncMock()
+
+        db = Mock()
+        db.create_ticket.return_value = 17
+        db.get_support_topic_by_telegram_id.return_value = {
+            "forum_chat_id": -100555,
+            "message_thread_id": 654,
+            "telegram_id": 123456789,
+        }
+        settings = type(
+            "S",
+            (),
+            {
+                "support_forum_chat_id": -100555,
+                "admin_telegram_ids": {555},
+                "admin_telegram_usernames": set(),
+            },
+        )()
+
+        await support_user_message(message=message, db=db, settings=settings)
+
+        message.answer.assert_awaited_once_with(
+            "Ваше сообщение отправлено. Оператор ответит вам в ближайшее время."
+        )
+
 
 class MiniAppCopyTests(unittest.TestCase):
     def test_user_app_uses_support_bot_linking(self) -> None:
@@ -201,23 +241,23 @@ class MiniAppCopyTests(unittest.TestCase):
 
 
 class SubscriptionDisplayNameTests(unittest.TestCase):
-    def test_apply_subscription_display_names(self) -> None:
+    def test_apply_subscription_display_names_replaces_any_vless_fragment(self) -> None:
         from handlers.get_vpn import _apply_subscription_display_names
 
-        raw = "vless://uuid@example.com:443?type=tcp#subscription"
+        raw = "vless://uuid@example.com:443?type=tcp#%F0%9F%9A%80%20Marz%20%28labguard_olegkivasev%29%20%5BVLESS%20-%20tcp%5D"
 
         updated = _apply_subscription_display_names(raw)
 
-        self.assertIn("%F0%9F%87%AB%F0%9F%87%AE%20%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F%20VPN", updated)
+        self.assertEqual(updated, "vless://uuid@example.com:443?type=tcp#%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F")
 
-    def test_apply_subscription_name_for_http_subscription_url(self) -> None:
+    def test_apply_subscription_display_names_replaces_any_http_fragment(self) -> None:
         from handlers.get_vpn import _apply_subscription_display_names
 
-        raw = "https://example.com/sub/abc#subscription"
+        raw = "https://example.com/sub/abc#LabGuard"
 
         updated = _apply_subscription_display_names(raw)
 
-        self.assertIn("#LabGuard", updated)
+        self.assertEqual(updated, "https://example.com/sub/abc#Финляндия")
 
 
 class StubSettings:
@@ -297,7 +337,7 @@ class MiniAppApiTests(unittest.TestCase):
         activation = self.client.post("/app/api/get-vpn")
         self.assertEqual(activation.status_code, 200)
         payload = activation.json()
-        self.assertIn("#LabGuard", payload["subscription_url"])
+        self.assertTrue(payload["subscription_url"].endswith("#Финляндия"))
         self.assertTrue(any(chat_id == 555 for chat_id, _ in self.bot.messages))
 
         status = self.client.get("/app/api/status")

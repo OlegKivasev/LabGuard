@@ -1,11 +1,52 @@
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import Message
 
 from config import Settings
 from database import Database
 
 router = Router(name="support_bot")
+
+
+async def _create_support_topic(bot, db: Database, forum_chat_id: int, telegram_id: int, username_text: str, ticket_id: int) -> int:
+    title = f"{username_text} [{telegram_id}]"
+    created_topic = await bot.create_forum_topic(chat_id=forum_chat_id, name=title[:128])
+    message_thread_id = int(created_topic.message_thread_id)
+    db.set_support_topic(
+        telegram_id=telegram_id,
+        forum_chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        ticket_id=ticket_id,
+    )
+    return message_thread_id
+
+
+async def _send_support_topic_header(
+    bot,
+    forum_chat_id: int,
+    message_thread_id: int,
+    username_text: str,
+    telegram_id: int,
+) -> None:
+    await bot.send_message(
+        chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        text=f"Пользователь: {username_text}\nTelegram ID: {telegram_id}",
+    )
+
+
+async def _send_support_user_text(
+    bot,
+    forum_chat_id: int,
+    message_thread_id: int,
+    text: str,
+) -> None:
+    await bot.send_message(
+        chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        text=text,
+    )
 
 
 def _is_admin(message: Message, settings: Settings) -> bool:
@@ -32,31 +73,58 @@ async def forward_user_message_to_admin(
     ticket_id = db.create_ticket(telegram_id, text)
     username_text = f"@{username}" if username else "без username"
     topic = db.get_support_topic_by_telegram_id(telegram_id)
+    is_new_topic = topic is None
     if topic is None:
-        title = f"{username_text} [{telegram_id}]"
-        created_topic = await bot.create_forum_topic(chat_id=forum_chat_id, name=title[:128])
-        message_thread_id = int(created_topic.message_thread_id)
-        db.set_support_topic(
-            telegram_id=telegram_id,
+        message_thread_id = await _create_support_topic(
+            bot=bot,
+            db=db,
             forum_chat_id=forum_chat_id,
-            message_thread_id=message_thread_id,
+            telegram_id=telegram_id,
+            username_text=username_text,
             ticket_id=ticket_id,
         )
     else:
         message_thread_id = int(topic["message_thread_id"])
 
-    await bot.send_message(
-        chat_id=forum_chat_id,
-        message_thread_id=message_thread_id,
-        text=(
-            f"Пользователь: {username_text}\n"
-            f"Telegram ID: {telegram_id}\n\n"
-            f"{text}"
-        ),
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Открыть профиль", url=f"tg://user?id={telegram_id}")]]
-        ),
-    )
+    try:
+        if is_new_topic:
+            await _send_support_topic_header(
+                bot=bot,
+                forum_chat_id=forum_chat_id,
+                message_thread_id=message_thread_id,
+                username_text=username_text,
+                telegram_id=telegram_id,
+            )
+        await _send_support_user_text(
+            bot=bot,
+            forum_chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            text=text,
+        )
+    except TelegramBadRequest:
+        if topic is None:
+            raise
+        message_thread_id = await _create_support_topic(
+            bot=bot,
+            db=db,
+            forum_chat_id=forum_chat_id,
+            telegram_id=telegram_id,
+            username_text=username_text,
+            ticket_id=ticket_id,
+        )
+        await _send_support_topic_header(
+            bot=bot,
+            forum_chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            username_text=username_text,
+            telegram_id=telegram_id,
+        )
+        await _send_support_user_text(
+            bot=bot,
+            forum_chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            text=text,
+        )
     return ticket_id
 
 
@@ -115,7 +183,7 @@ async def support_user_message(message: Message, db: Database, settings: Setting
         return
 
     try:
-        ticket_id = await forward_user_message_to_admin(
+        await forward_user_message_to_admin(
             bot=message.bot,
             db=db,
             settings=settings,
@@ -129,4 +197,4 @@ async def support_user_message(message: Message, db: Database, settings: Setting
         )
         return
 
-    await message.answer(f"Сообщение отправлено в поддержку. Номер обращения: #{ticket_id}.")
+    await message.answer("Ваше сообщение отправлено. Оператор ответит вам в ближайшее время.")
