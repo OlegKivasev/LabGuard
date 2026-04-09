@@ -16,6 +16,7 @@ class Settings:
     database_path: str
     free_trial_days: int
     support_bot_username: str
+    support_forum_chat_id: int
     admin_telegram_ids: set[int]
     admin_telegram_usernames: set[str]
     web_app_base_url: str
@@ -85,6 +86,7 @@ def load_settings() -> Settings:
         database_path=os.getenv("DATABASE_PATH", "./data/app.db").strip(),
         free_trial_days=int(os.getenv("FREE_TRIAL_DAYS", "14")),
         support_bot_username=os.getenv("SUPPORT_BOT_USERNAME", "").strip(),
+        support_forum_chat_id=int(os.getenv("SUPPORT_FORUM_CHAT_ID", "0") or "0"),
         admin_telegram_ids=admin_ids,
         admin_telegram_usernames=admin_usernames,
         web_app_base_url=os.getenv("WEB_APP_BASE_URL", "").strip(),

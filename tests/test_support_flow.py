@@ -83,16 +83,17 @@ class VpnIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_forward_user_message_to_admin_creates_ticket_and_mapping(self) -> None:
+    async def test_forward_user_message_to_admin_creates_topic_and_posts_into_it(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
         db.create_ticket.return_value = 17
-        db.link_support_admin_message.return_value = None
+        db.get_support_topic_by_telegram_id.return_value = None
+        db.set_support_topic.return_value = None
 
         bot = AsyncMock()
-        bot.send_message.return_value.message_id = 321
-        settings = type("S", (), {"admin_telegram_ids": {555}})()
+        bot.create_forum_topic.return_value = type("Topic", (), {"message_thread_id": 321})()
+        settings = type("S", (), {"support_forum_chat_id": -100555})()
 
         await forward_user_message_to_admin(
             bot=bot,
@@ -104,20 +105,29 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
         )
 
         db.create_ticket.assert_called_once_with(123456789, "Не работает VPN")
-        db.link_support_admin_message.assert_called_once()
+        db.set_support_topic.assert_called_once_with(
+            telegram_id=123456789,
+            forum_chat_id=-100555,
+            message_thread_id=321,
+            ticket_id=17,
+        )
+        bot.send_message.assert_awaited_once()
+        kwargs = bot.send_message.await_args.kwargs
+        self.assertEqual(kwargs["chat_id"], -100555)
+        self.assertEqual(kwargs["message_thread_id"], 321)
 
     async def test_forward_admin_reply_to_user_sends_message_from_bot(self) -> None:
         from handlers.support_bot import forward_admin_reply_to_user
 
         db = Mock()
-        db.get_support_link_by_admin_message.return_value = {"telegram_id": 123456789, "ticket_id": 17}
+        db.get_support_topic_by_thread.return_value = {"telegram_id": 123456789, "ticket_id": 17}
         bot = AsyncMock()
 
         delivered = await forward_admin_reply_to_user(
             bot=bot,
             db=db,
-            admin_chat_id=555,
-            admin_message_id=321,
+            forum_chat_id=-100555,
+            message_thread_id=321,
             text="Проверь, пожалуйста, настройки клиента.",
         )
 
@@ -127,21 +137,19 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
             text="Проверь, пожалуйста, настройки клиента.",
         )
 
-    async def test_forward_user_message_to_admin_uses_next_available_admin(self) -> None:
+    async def test_forward_user_message_to_admin_reuses_existing_topic(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
         db.create_ticket.return_value = 21
-        db.link_support_admin_message.return_value = None
-
-        async def send_message_side_effect(*, chat_id, text, reply_markup):
-            if chat_id == 555:
-                raise RuntimeError("bot can't initiate conversation with a user")
-            return type("Sent", (), {"message_id": 654})()
+        db.get_support_topic_by_telegram_id.return_value = {
+            "forum_chat_id": -100555,
+            "message_thread_id": 654,
+            "telegram_id": 123456789,
+        }
 
         bot = AsyncMock()
-        bot.send_message.side_effect = send_message_side_effect
-        settings = type("S", (), {"admin_telegram_ids": {555, 777}})()
+        settings = type("S", (), {"support_forum_chat_id": -100555})()
 
         ticket_id = await forward_user_message_to_admin(
             bot=bot,
@@ -153,19 +161,20 @@ class SupportBotFlowTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(ticket_id, 21)
-        db.link_support_admin_message.assert_called_once_with(777, 654, 123456789, 21)
+        bot.create_forum_topic.assert_not_called()
+        kwargs = bot.send_message.await_args.kwargs
+        self.assertEqual(kwargs["message_thread_id"], 654)
 
-    async def test_forward_user_message_to_admin_raises_when_no_admin_reachable(self) -> None:
+    async def test_forward_user_message_to_admin_requires_forum_chat(self) -> None:
         from handlers.support_bot import forward_user_message_to_admin
 
         db = Mock()
         db.create_ticket.return_value = 22
 
         bot = AsyncMock()
-        bot.send_message.side_effect = RuntimeError("bot can't initiate conversation with a user")
-        settings = type("S", (), {"admin_telegram_ids": {555}})()
+        settings = type("S", (), {"support_forum_chat_id": 0})()
 
-        with self.assertRaisesRegex(RuntimeError, "No reachable admin chats"):
+        with self.assertRaisesRegex(RuntimeError, "Support forum chat is not configured"):
             await forward_user_message_to_admin(
                 bot=bot,
                 db=db,
@@ -215,6 +224,7 @@ class StubSettings:
     bot_token = "test-token"
     support_bot_token = "support-token"
     support_bot_username = "labguard_support_bot"
+    support_forum_chat_id = -100555
     marzban_base_url = "https://example.com"
     marzban_api_key = ""
     marzban_username = ""

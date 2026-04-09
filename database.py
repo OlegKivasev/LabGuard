@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS support_admin_message_links (
     UNIQUE(admin_chat_id, admin_message_id)
 );
 
+CREATE TABLE IF NOT EXISTS support_topics (
+    telegram_id        INTEGER PRIMARY KEY,
+    forum_chat_id      INTEGER NOT NULL,
+    message_thread_id  INTEGER NOT NULL,
+    ticket_id          INTEGER REFERENCES tickets(id),
+    created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS daily_stats (
     date            DATE PRIMARY KEY,
     new_users       INTEGER DEFAULT 0,
@@ -422,6 +430,47 @@ class Database:
                 WHERE admin_chat_id = ? AND admin_message_id = ?
                 """,
                 (admin_chat_id, admin_message_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def set_support_topic(
+        self,
+        telegram_id: int,
+        forum_chat_id: int,
+        message_thread_id: int,
+        ticket_id: int,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO support_topics (
+                    telegram_id, forum_chat_id, message_thread_id, ticket_id
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (telegram_id, forum_chat_id, message_thread_id, ticket_id),
+            )
+
+    def get_support_topic_by_telegram_id(self, telegram_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT telegram_id, forum_chat_id, message_thread_id, ticket_id
+                FROM support_topics
+                WHERE telegram_id = ?
+                """,
+                (telegram_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_support_topic_by_thread(self, forum_chat_id: int, message_thread_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT telegram_id, forum_chat_id, message_thread_id, ticket_id
+                FROM support_topics
+                WHERE forum_chat_id = ? AND message_thread_id = ?
+                """,
+                (forum_chat_id, message_thread_id),
             ).fetchone()
             return dict(row) if row else None
 

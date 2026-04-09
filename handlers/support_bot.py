@@ -25,49 +25,52 @@ async def forward_user_message_to_admin(
     username: str | None,
     text: str,
 ) -> int:
-    admin_ids = sorted(settings.admin_telegram_ids)
-    if not admin_ids:
-        raise RuntimeError("No admin ids configured")
+    forum_chat_id = int(getattr(settings, "support_forum_chat_id", 0) or 0)
+    if not forum_chat_id:
+        raise RuntimeError("Support forum chat is not configured")
 
     ticket_id = db.create_ticket(telegram_id, text)
     username_text = f"@{username}" if username else "без username"
-    last_error: Exception | None = None
+    topic = db.get_support_topic_by_telegram_id(telegram_id)
+    if topic is None:
+        title = f"{username_text} [{telegram_id}]"
+        created_topic = await bot.create_forum_topic(chat_id=forum_chat_id, name=title[:128])
+        message_thread_id = int(created_topic.message_thread_id)
+        db.set_support_topic(
+            telegram_id=telegram_id,
+            forum_chat_id=forum_chat_id,
+            message_thread_id=message_thread_id,
+            ticket_id=ticket_id,
+        )
+    else:
+        message_thread_id = int(topic["message_thread_id"])
 
-    for admin_id in admin_ids:
-        try:
-            sent = await bot.send_message(
-                chat_id=admin_id,
-                text=(
-                    "Новый тикет поддержки.\n\n"
-                    f"Пользователь: {username_text}\n"
-                    f"Telegram ID: {telegram_id}\n"
-                    f"Сообщение: {text}"
-                ),
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[[InlineKeyboardButton(text="Открыть", url=f"tg://user?id={telegram_id}")]]
-                ),
-            )
-        except Exception as exc:
-            last_error = exc
-            continue
-
-        db.link_support_admin_message(admin_id, sent.message_id, telegram_id, ticket_id)
-        return ticket_id
-
-    raise RuntimeError("No reachable admin chats for support bot") from last_error
+    await bot.send_message(
+        chat_id=forum_chat_id,
+        message_thread_id=message_thread_id,
+        text=(
+            f"Пользователь: {username_text}\n"
+            f"Telegram ID: {telegram_id}\n\n"
+            f"{text}"
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Открыть профиль", url=f"tg://user?id={telegram_id}")]]
+        ),
+    )
+    return ticket_id
 
 
 async def forward_admin_reply_to_user(
     bot,
     db: Database,
-    admin_chat_id: int,
-    admin_message_id: int,
+    forum_chat_id: int,
+    message_thread_id: int,
     text: str,
 ) -> bool:
-    link = db.get_support_link_by_admin_message(admin_chat_id, admin_message_id)
-    if not link:
+    topic = db.get_support_topic_by_thread(forum_chat_id, message_thread_id)
+    if not topic:
         return False
-    await bot.send_message(chat_id=link["telegram_id"], text=text)
+    await bot.send_message(chat_id=topic["telegram_id"], text=text)
     return True
 
 
@@ -84,18 +87,23 @@ async def support_start(message: Message) -> None:
 async def support_admin_reply(message: Message, db: Database, settings: Settings) -> None:
     if not _is_admin(message, settings):
         return
-    if message.reply_to_message is None:
+    forum_chat_id = int(getattr(settings, "support_forum_chat_id", 0) or 0)
+    if message.chat.id != forum_chat_id:
+        return
+    thread_id = int(message.message_thread_id or 0)
+    if not thread_id:
+        await message.answer("Ответь внутри темы пользователя, чтобы бот понял адресата.")
         return
 
     delivered = await forward_admin_reply_to_user(
         bot=message.bot,
         db=db,
-        admin_chat_id=message.chat.id,
-        admin_message_id=message.reply_to_message.message_id,
+        forum_chat_id=message.chat.id,
+        message_thread_id=thread_id,
         text=message.text or "",
     )
     if not delivered:
-        await message.answer("Не удалось определить адресата. Ответь реплаем на сообщение тикета.")
+        await message.answer("Не удалось определить адресата темы.")
 
 
 @router.message(F.text)
@@ -117,7 +125,7 @@ async def support_user_message(message: Message, db: Database, settings: Setting
         )
     except RuntimeError:
         await message.answer(
-            "Поддержка сейчас недоступна. Попроси администратора сначала открыть чат с support-ботом и нажать /start."
+            "Поддержка сейчас недоступна. Проверь настройку форума поддержки для support-бота."
         )
         return
 
