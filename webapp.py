@@ -100,6 +100,24 @@ def _normalize_subscription_url(raw_url: str, base_url: str) -> str:
     return f"{base}/{url.lstrip('/')}"
 
 
+def _apply_subscription_display_names(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        return text
+
+    if text.lower().startswith("vless://"):
+        base, sep, _fragment = text.partition("#")
+        return f"{base}{sep}%F0%9F%87%AB%F0%9F%87%AE%20%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F%20VPN"
+
+    if text.lower().startswith(("http://", "https://")):
+        base, sep, _fragment = text.partition("#")
+        if sep:
+            return f"{base}#LabGuard"
+        return f"{text}#LabGuard"
+
+    return text
+
+
 def _build_marzban_username(telegram_id: int, username: str) -> str:
     base = (username or f"tg_{telegram_id}").lower()
     safe = re.sub(r"[^a-z0-9_]", "_", base)
@@ -163,6 +181,25 @@ def build_app(
             return False
         try:
             await bot.send_message(telegram_id, _format_trial_notification(expires_at))
+        except Exception:
+            return False
+        return True
+
+    async def _notify_admin_about_vpn_issued(telegram_id: int, username: str | None) -> bool:
+        if bot is None:
+            return False
+        admin_ids = sorted(settings.admin_telegram_ids)
+        if not admin_ids:
+            return False
+        username_text = f"@{username}" if username else "без username"
+        text = (
+            "Новый пользователь получил VPN-ссылку.\n\n"
+            f"Пользователь: {username_text}\n"
+            f"Telegram ID: {telegram_id}\n"
+            f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        try:
+            await bot.send_message(admin_ids[0], text)
         except Exception:
             return False
         return True
@@ -389,15 +426,22 @@ def build_app(
             expires_at = dt.strftime("%Y-%m-%d %H:%M:%S")
 
         if user and is_active:
+            stored_subscription_url = str(user.get("subscription_url") or "").strip()
+            if stored_subscription_url:
+                subscription_url = stored_subscription_url
             for candidate in _candidate_marzban_usernames(user, telegram_id):
                 try:
                     marzban_user = await marzban.get_user(candidate)
                 except Exception:
                     marzban_user = None
                 if marzban_user:
-                    subscription_url, is_subscription = _extract_subscription_text(marzban_user)
-                    if is_subscription:
-                        subscription_url = _normalize_subscription_url(subscription_url, marzban.base_url)
+                    if not subscription_url:
+                        subscription_url, is_subscription = _extract_subscription_text(marzban_user)
+                        if is_subscription:
+                            subscription_url = _normalize_subscription_url(subscription_url, marzban.base_url)
+                        subscription_url = _apply_subscription_display_names(subscription_url)
+                        if subscription_url:
+                            db.set_subscription_url(telegram_id, subscription_url)
                     used_traffic_bytes = int(marzban_user.get("used_traffic", 0) or 0)
                     break
 
@@ -435,9 +479,16 @@ def build_app(
                 sub_text = ""
                 is_subscription = False
                 if marzban_user:
-                    sub_text, is_subscription = _extract_subscription_text(marzban_user)
-                    if is_subscription:
-                        sub_text = _normalize_subscription_url(sub_text, marzban.base_url)
+                    stored_subscription_url = str(existing.get("subscription_url") or "").strip()
+                    if stored_subscription_url:
+                        sub_text = stored_subscription_url
+                    else:
+                        sub_text, is_subscription = _extract_subscription_text(marzban_user)
+                        if is_subscription:
+                            sub_text = _normalize_subscription_url(sub_text, marzban.base_url)
+                        sub_text = _apply_subscription_display_names(sub_text)
+                        if sub_text:
+                            db.set_subscription_url(telegram_id, sub_text)
 
                 db.mark_trial_used(telegram_id)
                 db.touch_last_active(telegram_id)
@@ -494,6 +545,10 @@ def build_app(
         config_text, is_subscription = _extract_subscription_text(marzban_user)
         if is_subscription:
             config_text = _normalize_subscription_url(config_text, marzban.base_url)
+        config_text = _apply_subscription_display_names(config_text)
+        if config_text:
+            db.set_subscription_url(telegram_id, config_text)
+        await _notify_admin_about_vpn_issued(telegram_id, username)
 
         return {
             "ok": True,
@@ -1629,7 +1684,7 @@ _USER_APP_HTML = """<!doctype html>
       } else if (data.trial_used) {
         statusText.textContent = 'Подписка истекла'
         statusBadge.style.display = 'none'
-        statusMeta.innerHTML = `<div class="meta-item"><div class="meta-label">Дата окончания</div><div class="meta-value">${formatLocalDate(data.expires_at)}</div></div><div class="muted" style="grid-column:1/-1;">Для продления подписки можно обратиться в поддержку. Приятного пользования.</div>`
+        statusMeta.innerHTML = `<div class="muted" style="grid-column:1/-1;">Для продления подписки можно обратиться в поддержку. Приятного пользования.</div>`
       } else {
         statusText.textContent = 'Подписка не активирована'
         statusBadge.style.display = 'none'

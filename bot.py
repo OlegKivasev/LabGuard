@@ -2,6 +2,7 @@ import asyncio
 import argparse
 import logging
 import sys
+from dataclasses import replace
 
 from aiogram import Bot, Dispatcher
 
@@ -75,6 +76,22 @@ async def check_marzban_connection() -> int:
         return 1
 
 
+async def _resolve_runtime_settings(settings, support_bot: Bot | None):
+    if support_bot is None or settings.support_bot_username:
+        return settings
+
+    try:
+        me = await support_bot.get_me()
+    except Exception:
+        return settings
+
+    username = str(getattr(me, "username", "") or "").strip()
+    if not username:
+        return settings
+
+    return replace(settings, support_bot_username=username)
+
+
 async def main() -> None:
     settings = load_settings()
 
@@ -87,6 +104,7 @@ async def main() -> None:
 
     bot = Bot(token=settings.bot_token)
     support_bot = Bot(token=settings.support_bot_token) if settings.support_bot_token else None
+    settings = await _resolve_runtime_settings(settings, support_bot)
     await setup_bot(bot, settings)
 
     dp = Dispatcher()

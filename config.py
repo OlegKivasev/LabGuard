@@ -60,6 +60,8 @@ def load_settings() -> Settings:
     verify_tls = verify_raw not in {"0", "false", "no", "off"}
 
     admin_ids_raw = os.getenv("ADMIN_TELEGRAM_IDS", "").strip()
+    if not admin_ids_raw:
+        admin_ids_raw = os.getenv("ADMIN_ID", "").strip()
     admin_ids: set[int] = set()
     admin_usernames: set[str] = set()
     if admin_ids_raw:

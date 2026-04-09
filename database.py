@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     telegram_id   INTEGER UNIQUE,
     username      TEXT,
     marzban_id    TEXT,
+    subscription_url TEXT,
     platform      TEXT,
     source        TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -96,6 +97,8 @@ class Database:
             }
             if "no_trial_limits" not in user_columns:
                 conn.execute("ALTER TABLE users ADD COLUMN no_trial_limits BOOLEAN DEFAULT 0")
+            if "subscription_url" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN subscription_url TEXT")
 
     def create_user_if_not_exists(
         self,
@@ -125,6 +128,13 @@ class Database:
                 return None
 
             return dict(row)
+
+    def set_subscription_url(self, telegram_id: int, subscription_url: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE users SET subscription_url = ? WHERE telegram_id = ?",
+                (subscription_url, telegram_id),
+            )
 
     def list_recent_users(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:
