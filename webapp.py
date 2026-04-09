@@ -116,10 +116,8 @@ def _apply_subscription_display_names(raw_text: str) -> str:
         return f"{text}#{encoded_name}"
 
     if text.lower().startswith(("http://", "https://")):
-        base, sep, _fragment = text.partition("#")
-        if sep:
-            return f"{base}#{fixed_name}"
-        return f"{text}#{fixed_name}"
+        base, _sep, _fragment = text.partition("#")
+        return base
 
     return text
 

@@ -257,7 +257,7 @@ class SubscriptionDisplayNameTests(unittest.TestCase):
 
         updated = _apply_subscription_display_names(raw)
 
-        self.assertEqual(updated, "https://example.com/sub/abc#Финляндия")
+        self.assertEqual(updated, "https://example.com/sub/abc")
 
 
 class StubSettings:
@@ -342,7 +342,8 @@ class MiniAppApiTests(unittest.TestCase):
         activation = self.client.post("/app/api/get-vpn")
         self.assertEqual(activation.status_code, 200)
         payload = activation.json()
-        self.assertTrue(payload["subscription_url"].endswith("#Финляндия"))
+        self.assertTrue(payload["subscription_url"].startswith("https://example.com/sub/"))
+        self.assertNotIn("#", payload["subscription_url"])
         self.assertTrue(any(chat_id == 555 for chat_id, _ in self.bot.messages))
 
         status = self.client.get("/app/api/status")
