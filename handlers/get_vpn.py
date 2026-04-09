@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import logging
 import re
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, urlparse
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -80,18 +80,20 @@ def _apply_subscription_display_names(raw_text: str) -> str:
     if not text:
         return text
 
+    fixed_name = "Финляндия"
+    encoded_name = quote(fixed_name)
+
     if text.lower().startswith("vless://"):
-        base, sep, fragment = text.partition("#")
-        fragment_text = unquote(fragment or "")
-        if not fragment_text or fragment_text.lower() == "subscription":
-            fragment_text = "🇫🇮 Финляндия VPN"
-        return f"{base}{sep}{quote(fragment_text)}"
+        base, sep, _fragment = text.partition("#")
+        if sep:
+            return f"{base}#{encoded_name}"
+        return f"{text}#{encoded_name}"
 
     if text.lower().startswith(("http://", "https://")):
-        if "#" in text:
-            base, _, _ = text.partition("#")
-            return f"{base}#LabGuard"
-        return f"{text}#LabGuard"
+        base, sep, _fragment = text.partition("#")
+        if sep:
+            return f"{base}#{fixed_name}"
+        return f"{text}#{fixed_name}"
 
     return text
 

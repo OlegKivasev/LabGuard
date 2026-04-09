@@ -1,6 +1,6 @@
 from aiogram import F, Router
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import Message
 
 from config import Settings
 from database import Database
@@ -52,9 +52,6 @@ async def forward_user_message_to_admin(
             f"Пользователь: {username_text}\n"
             f"Telegram ID: {telegram_id}\n\n"
             f"{text}"
-        ),
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Открыть профиль", url=f"tg://user?id={telegram_id}")]]
         ),
     )
     return ticket_id
@@ -115,7 +112,7 @@ async def support_user_message(message: Message, db: Database, settings: Setting
         return
 
     try:
-        ticket_id = await forward_user_message_to_admin(
+        await forward_user_message_to_admin(
             bot=message.bot,
             db=db,
             settings=settings,
@@ -129,4 +126,4 @@ async def support_user_message(message: Message, db: Database, settings: Setting
         )
         return
 
-    await message.answer(f"Сообщение отправлено в поддержку. Номер обращения: #{ticket_id}.")
+    await message.answer("Ваше сообщение отправлено. Оператор ответит вам в ближайшее время.")

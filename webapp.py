@@ -105,15 +105,20 @@ def _apply_subscription_display_names(raw_text: str) -> str:
     if not text:
         return text
 
+    fixed_name = "Финляндия"
+    encoded_name = quote(fixed_name)
+
     if text.lower().startswith("vless://"):
         base, sep, _fragment = text.partition("#")
-        return f"{base}{sep}%F0%9F%87%AB%F0%9F%87%AE%20%D0%A4%D0%B8%D0%BD%D0%BB%D1%8F%D0%BD%D0%B4%D0%B8%D1%8F%20VPN"
+        if sep:
+            return f"{base}#{encoded_name}"
+        return f"{text}#{encoded_name}"
 
     if text.lower().startswith(("http://", "https://")):
         base, sep, _fragment = text.partition("#")
         if sep:
-            return f"{base}#LabGuard"
-        return f"{text}#LabGuard"
+            return f"{base}#{fixed_name}"
+        return f"{text}#{fixed_name}"
 
     return text
 
