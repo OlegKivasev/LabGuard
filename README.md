@@ -51,6 +51,11 @@ Mini App settings:
 - `WEB_APP_PORT` (default `8081`)
 - `WEB_APP_TOKEN_TTL_MINUTES` (default `30`)
 
+3X-UI settings:
+- `XUI_BASE_URL` - API/login base URL for the panel client (can be local URL with panel path)
+- `XUI_PUBLIC_BASE_URL` - public base URL used to build subscription links; if empty, falls back to `XUI_BASE_URL`
+- `XUI_SUBSCRIPTION_PATH` - subscription path (default `/sub/`)
+
 Mini App sections:
 - `Метрика`:
   - users with `/start`

@@ -37,6 +37,7 @@ class XUIClient:
     def __init__(
         self,
         base_url: str,
+        public_base_url: str = "",
         username: str = "",
         password: str = "",
         inbound_id: int = 0,
@@ -46,6 +47,7 @@ class XUIClient:
         verify_tls: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.public_base_url = public_base_url.rstrip("/") or self.base_url
         self.username = username.strip()
         self.password = password.strip()
         self.inbound_id = int(inbound_id or 0)
@@ -153,7 +155,7 @@ class XUIClient:
             total=int(stats.get("total", 0) or 0),
             expiry_time=int(client.get("expiryTime", 0) or 0),
             enable=bool(client.get("enable", False)),
-            subscription_url=_build_subscription_url(self.base_url, self.subscription_path, sub_id, self.subscription_name),
+            subscription_url=_build_subscription_url(self.public_base_url, self.subscription_path, sub_id, self.subscription_name),
         )
 
     async def get_user(self, email: str) -> dict[str, Any] | None:

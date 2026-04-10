@@ -62,6 +62,7 @@ async def check_xui_connection() -> int:
 
     client = XUIClient(
         base_url=settings.xui_base_url,
+        public_base_url=settings.xui_public_base_url,
         username=settings.xui_username,
         password=settings.xui_password,
         inbound_id=settings.xui_inbound_id,
@@ -120,6 +121,7 @@ async def main() -> None:
     dp["settings"] = settings
     xui_client = XUIClient(
         base_url=settings.xui_base_url,
+        public_base_url=settings.xui_public_base_url,
         username=settings.xui_username,
         password=settings.xui_password,
         inbound_id=settings.xui_inbound_id,

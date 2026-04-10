@@ -9,6 +9,7 @@ class Settings:
     bot_token: str
     support_bot_token: str
     xui_base_url: str
+    xui_public_base_url: str
     xui_username: str
     xui_password: str
     xui_inbound_id: int
@@ -83,6 +84,7 @@ def load_settings() -> Settings:
         bot_token=os.getenv("BOT_TOKEN", "").strip(),
         support_bot_token=os.getenv("SUPPORT_BOT_TOKEN", "").strip(),
         xui_base_url=os.getenv("XUI_BASE_URL", "").strip(),
+        xui_public_base_url=os.getenv("XUI_PUBLIC_BASE_URL", "").strip(),
         xui_username=os.getenv("XUI_USERNAME", "").strip(),
         xui_password=os.getenv("XUI_PASSWORD", "").strip(),
         xui_inbound_id=int(os.getenv("XUI_INBOUND_ID", "0") or "0"),

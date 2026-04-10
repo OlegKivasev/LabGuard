@@ -218,7 +218,7 @@ async def cmd_get(
 
     config_text, is_subscription = _extract_subscription_text(panel_user)
     if is_subscription:
-        config_text = _normalize_subscription_url(config_text, xui.base_url)
+        config_text = _normalize_subscription_url(config_text, xui.public_base_url)
     config_text = _apply_subscription_display_names(config_text)
 
     if not config_text:

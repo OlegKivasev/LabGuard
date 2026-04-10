@@ -442,7 +442,7 @@ def build_app(
                     if not subscription_url:
                         subscription_url, is_subscription = _extract_subscription_text(marzban_user)
                         if is_subscription:
-                            subscription_url = _normalize_subscription_url(subscription_url, marzban.base_url)
+                            subscription_url = _normalize_subscription_url(subscription_url, marzban.public_base_url)
                         subscription_url = _apply_subscription_display_names(subscription_url)
                         if subscription_url:
                             db.set_subscription_url(telegram_id, subscription_url)
@@ -492,7 +492,7 @@ def build_app(
                     else:
                         sub_text, is_subscription = _extract_subscription_text(marzban_user)
                         if is_subscription:
-                            sub_text = _normalize_subscription_url(sub_text, marzban.base_url)
+                            sub_text = _normalize_subscription_url(sub_text, marzban.public_base_url)
                         sub_text = _apply_subscription_display_names(sub_text)
                         if sub_text:
                             db.set_subscription_url(telegram_id, sub_text)
@@ -551,7 +551,7 @@ def build_app(
 
         config_text, is_subscription = _extract_subscription_text(marzban_user)
         if is_subscription:
-            config_text = _normalize_subscription_url(config_text, marzban.base_url)
+            config_text = _normalize_subscription_url(config_text, marzban.public_base_url)
         config_text = _apply_subscription_display_names(config_text)
         if config_text:
             db.set_subscription_url(telegram_id, config_text)

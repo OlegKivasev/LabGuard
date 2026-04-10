@@ -43,6 +43,7 @@ class SupportConfigAndSchemaTests(unittest.TestCase):
         self.assertIn(777, settings.admin_telegram_ids)
 
 
+
 class SupportRuntimeSettingsTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolve_runtime_settings_fetches_support_username_from_bot(self) -> None:
         from bot import _resolve_runtime_settings
@@ -291,6 +292,7 @@ class StubBot:
 class StubMarzbanForMiniApp:
     def __init__(self) -> None:
         self.base_url = "https://example.com"
+        self.public_base_url = "https://example.com"
         self.create_counter = 0
 
     @property
